@@ -115,7 +115,6 @@
 /* ---------- settings (every choice is explained in docs/DECISIONS.md) ---------- */
 const STAC = 'https://earth-search.aws.element84.com/v1/search';
 const COLLECTION = 'sentinel-2-l2a';
-const FIRST_YEAR = 2017;              // default first year; Earth Search L2A has nothing before 2017 over Borneo (checked 2026-11-03)
 const MAX_CLEAR = 0.02;               // a scene counts as clear when at most 2 % of the polygon is cloud, shadow, defective or no data (5 % still showed visible clouds in the Borneo test)
 const MAX_SCORE = 12;                 // most acquisition days scored per year (lowest tile cloud first, in batches; stops at the first batch with a clear day)
 const SCORE_BATCH = 4;
@@ -381,6 +380,15 @@ async function buildYear(ctx, year, from, to, say, alive) {
            single: { rgb: best.rgb, bad: best.bad, date: best.date, ids: best.items.map(i => i.id) } };
 }
 
+/* the date of the earliest Sentinel-2 L2A scene Earth Search holds over the polygon: it differs by region (checked 2026-11-03: Alps 2016-11-01, Iceland 2016-11-03, Borneo 2017-02-05, Svalbard 2018-03-11) */
+async function earliestScene(grid, pkey) {
+  const key = `${CACHE_VERSION}|e|${pkey}`, hit = await store.get(key);
+  if (hit) return hit.date;
+  const d = await stacPost(STAC, { collections: [COLLECTION], bbox: [grid.w, grid.s, grid.e, grid.n], limit: 1, sortby: [{ field: 'properties.datetime', direction: 'asc' }], fields: { include: ['id', 'properties.datetime'] } });
+  const date = d.features.length ? d.features[0].properties.datetime.slice(0, 10) : null;
+  if (date) await store.put(key, { kind: 'earliest', date });
+  return date;
+}
 /* tropics: no summer. Pick the three months with the lowest mean tile cloud cover over all years (same months every year, so frames are comparable) */
 async function clearestQuarter(grid, rings, y0, y1, say) {
   const key = `${CACHE_VERSION}|q|${polyKey(rings)}|${y0}-${y1}`, hit = await store.get(key);
@@ -587,12 +595,16 @@ async function run(cfg) {
   const g = state.grid = setupGrid(cfg.rings), sg = setupGrid(cfg.rings, SCORE_PIXEL_M, SCORE_SIDE); state.rings = cfg.rings;
   const cv = $('cv'); cv.width = g.W; cv.height = g.H;
   const pkey = state.pkey = polyKey(cfg.rings); loadView();
+  $('loadHead').textContent = 'Checking which years Earth Search has for this place…';
+  const earliest = await earliestScene(g, pkey); if (!alive()) return;
+  if (!earliest) { state.running = false; $('loading').classList.add('done'); $('loadHead').textContent = 'Earth Search has no Sentinel-2 L2A scene over this polygon.'; return; }
+  const earliestY = +earliest.slice(0, 4);
   let from = +$('mFrom').value, to = +$('mTo').value;
   const tropic = Math.abs(g.lat0) < 23.5;
   if (cfg.auto) {
     if (tropic) {
       $('loadHead').textContent = 'Finding the clearest months…';
-      const q = await clearestQuarter(g, cfg.rings, FIRST_YEAR, new Date().getUTCFullYear() - 1, t => { if (alive()) $('status').textContent = t; }); if (!alive()) return;   // always every full year, so the months do not depend on the years shown
+      const q = await clearestQuarter(g, cfg.rings, earliestY, new Date().getUTCFullYear() - 1, t => { if (alive()) $('status').textContent = t; }); if (!alive()) return;   // always every full year, so the months do not depend on the years shown
       from = q.from; to = q.to; cfg.note = `Season: tropics (latitude ${g.lat0.toFixed(1)}) have no summer, so the three months with the lowest mean cloud cover in the catalogue are used: ${MONTHS[from - 1]} to ${MONTHS[to - 1]} (mean tile cloud ${q.meanCloud.toFixed(0)} %), the same months every year.`;
     } else if (g.lat0 > 0) { from = 6; to = 9; cfg.note = 'Season: northern summer, June to September.'; }
     else { from = 12; to = 3; cfg.note = 'Season: southern summer, December to March (a season is named after the year it ends in).'; }
@@ -601,7 +613,9 @@ async function run(cfg) {
   $('seasonNote').textContent = cfg.note;
   /* years: the selection on the page; the last year offered is the latest whose season has ended */
   const lastY = lastFullYear(from, to);
-  fillYearSelects(lastY, cfg);
+  /* first year: the first one whose season ends after the earliest scene (the season of 2016 in the Alps is over before the first scene of November 2016) */
+  let firstY = earliestY; while (seasonWindow(firstY, from, to).end < earliest) firstY++;
+  fillYearSelects(firstY, lastY, earliest, cfg);
   const years = []; for (let y = +$('yFrom').value; y <= +$('yTo').value; y++) years.push(y);
   state.years = years; years.forEach(y => state.stat[y] = { s: 'pending' }); renderChips();
   $('slider').max = 0;
@@ -630,13 +644,13 @@ async function run(cfg) {
   state.idx = 0; draw(); if (state.frames.length > 1) play(true);
   window.__done = true; window.__secs = +secs;
 }
-function fillYearSelects(lastY, cfg) {
+function fillYearSelects(firstY, lastY, earliest, cfg) {
   const a = $('yFrom'), b = $('yTo'), keepA = a.value, keepB = b.value;
   a.innerHTML = b.innerHTML = '';
-  for (let y = FIRST_YEAR; y <= lastY; y++) { a.add(new Option(y, y)); b.add(new Option(y, y)); }
-  a.value = String(Math.min(Math.max(+(keepA || cfg.y0 || FIRST_YEAR), FIRST_YEAR), lastY));
-  b.value = String(Math.min(Math.max(+(keepB || cfg.y1 || lastY), FIRST_YEAR), lastY));
-  $('yearNote').textContent = `Years: ${FIRST_YEAR} is the first year offered (Earth Search has no Sentinel-2 L2A before it over Borneo, the only place checked); the last is ${lastY}, the latest year whose season has ended. Change them above.`;
+  for (let y = firstY; y <= lastY; y++) { a.add(new Option(y, y)); b.add(new Option(y, y)); }
+  a.value = String(Math.min(Math.max(+(keepA || cfg.y0 || firstY), firstY), lastY));
+  b.value = String(Math.min(Math.max(+(keepB || cfg.y1 || lastY), firstY), lastY));
+  $('yearNote').textContent = `Years: ${firstY} is the first year offered, because the earliest Sentinel-2 L2A scene Earth Search has over this polygon is from ${earliest} (it differs by region); ${lastY} is the latest year whose season has ended. Change them above.`;
 }
 async function showCacheInfo() { const n = await store.count(); $('cacheInfo').textContent = n ? `(${n} saved)` : ''; }
 

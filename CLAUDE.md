@@ -69,3 +69,4 @@ The user-experience gap: the results map shows the polygons but there is no way 
 - 2026-11-03: GitHub Pages switched on (https://braakhekke.github.io/GfS/); export as video / GIF / PNG added to `index.html` (D-07). Still open: terms of use (Q-08), the wire in the real tool (Q-09), Safari/Firefox/phone tests, playback test of the MP4 in other players.
 - 2026-11-03: faster scoring (about 1.5 to 2 times, D-08), loading display with per-year chips and counter, per-browser saved pictures (IndexedDB), selectable years, Alps test polygon in the mockup. Raise `CACHE_VERSION` in `index.html` when scoring or rendering changes.
 - 2026-11-03: scene table can delete a year from the timelapse and switch a composite year to its best single scene (D-09); `CACHE_VERSION` is `v2`.
+- 2026-11-03: first year is looked up per polygon from Earth Search (D-10), no longer a constant.
