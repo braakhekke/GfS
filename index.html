@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GfS population timelapse</title>
+<!--
+  Genes from Space: Sentinel-2 timelapse of one population polygon.
+  Standalone page: no server, no key, no paid service. Everything runs in the browser.
+  Scenes: Earth Search STAC (Element 84), Sentinel-2 L2A Cloud Optimized GeoTIFFs on the public AWS bucket.
+  Method and decisions: docs/DECISIONS.md. Link format: docs/URL_CONTRACT.md.
+-->
+<style>
+  :root { --ink:#1b2b34; --muted:#5d6b73; --line:#d7dde0; --bg:#f6f8f8; --accent:#1f6f50; --warn:#a4561a; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; color:var(--ink); background:var(--bg); }
+  header { padding:12px 16px; background:#fff; border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; }
+  h1 { font-size:16px; margin:0; }
+  header .sub { color:var(--muted); }
+  main { max-width:980px; margin:0 auto; padding:16px; }
+  .stage { position:relative; background:#0e1417; border-radius:6px; overflow:hidden; min-height:200px; display:flex; justify-content:center; }
+  canvas { display:block; max-width:100%; height:auto; max-height:70vh; width:auto; }
+  .bar { display:flex; gap:10px; align-items:center; margin:10px 0; flex-wrap:wrap; }
+  button, select { font:inherit; padding:5px 10px; border:1px solid var(--line); border-radius:4px; background:#fff; color:var(--ink); cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  input[type=range] { flex:1; min-width:160px; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; color:var(--muted); }
+  #status { color:var(--muted); min-height:1.4em; margin:4px 0; }
+  #caption { margin:6px 0; }
+  .warn { color:var(--warn); }
+  table { border-collapse:collapse; width:100%; margin-top:10px; font-size:12.5px; background:#fff; }
+  th, td { border:1px solid var(--line); padding:4px 8px; text-align:left; }
+  th { background:#eef2f2; }
+  footer { margin-top:18px; color:var(--muted); font-size:12px; }
+  code { background:#eef2f2; padding:1px 4px; border-radius:3px; }
+  .help { background:#fff; border:1px solid var(--line); border-radius:6px; padding:12px 16px; }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/geotiff@2.1.3/dist-browser/geotiff.js"></script>
+</head>
+<body>
+<header>
+  <h1>Genes from Space: population timelapse</h1>
+  <span class="sub" id="title"></span>
+</header>
+<main>
+  <div id="help" class="help" hidden>
+    <p><b>No population polygon in the link.</b> Open this page with a polygon, for example:</p>
+    <p><a id="exampleLink" href="#">Example population (Sabah, Borneo)</a></p>
+    <p>Link format: <code>#geojson=&lt;URL-encoded GeoJSON&gt;</code> or <code>#bbox=west,south,east,north</code>, optional <code>&amp;name=pop_1&amp;y0=2017&amp;y1=2025</code>. See <code>docs/URL_CONTRACT.md</code>.</p>
+  </div>
+  <div id="app" hidden>
+    <div class="row">
+      <label>Season (months)
+        <select id="mFrom"></select> to <select id="mTo"></select>
+      </label>
+      <span id="seasonNote"></span>
+      <label><input type="checkbox" id="outline" checked> outline</label>
+      <button id="rebuild">Rebuild</button>
+    </div>
+    <div id="status">Starting…</div>
+    <div class="stage"><canvas id="cv" width="10" height="10"></canvas></div>
+    <div class="bar">
+      <button id="play">Play</button>
+      <input type="range" id="slider" min="0" max="0" value="0">
+      <label>Speed <select id="speed"><option value="1500">slow</option><option value="900" selected>normal</option><option value="450">fast</option></select></label>
+    </div>
+    <div id="caption"></div>
+    <table id="tbl" hidden><thead><tr><th>Year</th><th>Source</th><th>Date(s)</th><th>Cloud or no data in polygon</th><th>Scene(s)</th></tr></thead><tbody></tbody></table>
+  </div>
+  <footer>
+    Contains modified Copernicus Sentinel data (Sentinel-2 L2A), read from the public AWS Open Data copy via Earth Search (Element 84).
+    Pictures are the true-colour product (TCI) as delivered, only cut to the polygon area; cloud masking uses the scene classification (SCL).
+    Prototype: <a href="https://github.com/braakhekke/GfS">repository and decisions</a>.
+  </footer>
+</main>
+<script>
+'use strict';
+/* ---------- settings (every choice is explained in docs/DECISIONS.md) ---------- */
+const STAC = 'https://earth-search.aws.element84.com/v1/search';
+const COLLECTION = 'sentinel-2-l2a';
+const FIRST_YEAR = 2017;              // Earth Search L2A has nothing before 2017 over Borneo (checked 2026-11-03)
+const MAX_CLEAR = 0.02;               // a scene counts as clear when at most 2 % of the polygon is cloud, shadow, defective or no data (5 % still showed visible clouds in the Borneo test)
+const MAX_SCORE = 10;                 // most acquisition days scored per year (best by tile cloud cover first)
+const MAX_COMPOSITE = 12;             // most scenes used in a fallback composite
+const MAX_SIDE = 800;                 // longest side of a frame in pixels
+const MIN_PIXEL_M = 10;               // never finer than the Sentinel-2 pixel
+const BAD = new Set([0, 1, 3, 8, 9, 10]);   // SCL: no data, saturated/defective, cloud shadow, cloud medium/high, thin cirrus
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const $ = id => document.getElementById(id);
+
+/* ---------- input ---------- */
+function parseHash() {
+  const p = new URLSearchParams(location.hash.slice(1));
+  let rings = null;
+  if (p.get('geojson')) {
+    const g = JSON.parse(p.get('geojson'));
+    const polys = [];
+    const walk = o => { if (!o) return;
+      if (o.type === 'FeatureCollection') o.features.forEach(walk);
+      else if (o.type === 'Feature') walk(o.geometry);
+      else if (o.type === 'Polygon') polys.push(o.coordinates);
+      else if (o.type === 'MultiPolygon') o.coordinates.forEach(c => polys.push(c)); };
+    walk(g);
+    if (polys.length) rings = polys;
+  } else if (p.get('bbox')) {
+    const [w, s, e, n] = p.get('bbox').split(',').map(Number);
+    if ([w, s, e, n].every(Number.isFinite)) rings = [[[[w, s], [e, s], [e, n], [w, n], [w, s]]]];
+  }
+  return { rings, name: p.get('name') || '', y0: +p.get('y0') || FIRST_YEAR, y1: +p.get('y1') || 0, from: +p.get('from') || 0, to: +p.get('to') || 0 };
+}
+
+/* ---------- geometry ---------- */
+function setupGrid(rings) {
+  let w = 180, s = 90, e = -180, n = -90;
+  for (const poly of rings) for (const ring of poly) for (const [x, y] of ring) { w = Math.min(w, x); e = Math.max(e, x); s = Math.min(s, y); n = Math.max(n, y); }
+  const padX = Math.max((e - w) * 0.08, 0.0005), padY = Math.max((n - s) * 0.08, 0.0005);
+  w -= padX; e += padX; s -= padY; n += padY;
+  const lat0 = (s + n) / 2, mx = (e - w) * Math.cos(lat0 * Math.PI / 180) * 111320, my = (n - s) * 110574;
+  const pixelM = Math.max(MIN_PIXEL_M, Math.max(mx, my) / MAX_SIDE);
+  const W = Math.max(2, Math.round(mx / pixelM)), H = Math.max(2, Math.round(my / pixelM));
+  const inPoly = new Uint8Array(W * H);
+  for (let r = 0; r < H; r++) { const lat = n - (r + 0.5) / H * (n - s);
+    for (let c = 0; c < W; c++) { const lon = w + (c + 0.5) / W * (e - w);
+      let inside = false;
+      for (const poly of rings) { let k = pointIn(poly[0], lon, lat); if (k) for (let h = 1; h < poly.length; h++) if (pointIn(poly[h], lon, lat)) { k = false; break; } if (k) { inside = true; break; } }
+      inPoly[r * W + c] = inside ? 1 : 0; } }
+  let count = 0; for (let i = 0; i < inPoly.length; i++) count += inPoly[i];
+  return { w, s, e, n, W, H, pixelM, inPoly, count, lat0 };
+}
+function pointIn(ring, x, y) {
+  let ins = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) ins = !ins;
+  }
+  return ins;
+}
+/* map every output pixel to the projected coordinates of a scene's CRS: exact at a coarse set of nodes, bilinear between them */
+const mapCache = new Map();
+function pixelMap(grid, epsg) {
+  if (mapCache.has(epsg)) return mapCache.get(epsg);
+  const zone = epsg % 100, south = epsg >= 32700;
+  const def = `+proj=utm +zone=${zone}${south ? ' +south' : ''} +datum=WGS84 +units=m +no_defs`;
+  const fwd = proj4('EPSG:4326', def), { W, H, w, e, s, n } = grid, S = 16;
+  const nc = Math.ceil(W / S) + 1, nr = Math.ceil(H / S) + 1, nx = new Float64Array(nc * nr), ny = new Float64Array(nc * nr);
+  for (let r = 0; r < nr; r++) for (let c = 0; c < nc; c++) {
+    const [x, y] = fwd.forward([w + Math.min(c * S, W) / W * (e - w), n - Math.min(r * S, H) / H * (n - s)]);
+    nx[r * nc + c] = x; ny[r * nc + c] = y; }
+  const X = new Float64Array(W * H), Y = new Float64Array(W * H);
+  for (let r = 0; r < H; r++) { const r0 = Math.floor(r / S), fr = (r - r0 * S) / S;
+    for (let c = 0; c < W; c++) { const c0 = Math.floor(c / S), fc = (c - c0 * S) / S, a = r0 * nc + c0, b = a + 1, d = a + nc, f = d + 1;
+      X[r * W + c] = (nx[a] * (1 - fc) + nx[b] * fc) * (1 - fr) + (nx[d] * (1 - fc) + nx[f] * fc) * fr;
+      Y[r * W + c] = (ny[a] * (1 - fc) + ny[b] * fc) * (1 - fr) + (ny[d] * (1 - fc) + ny[f] * fc) * fr; } }
+  const m = { X, Y }; mapCache.set(epsg, m); return m;
+}
+
+/* ---------- STAC ---------- */
+async function stacSearch(grid, start, end) {
+  const body = { collections: [COLLECTION], bbox: [grid.w, grid.s, grid.e, grid.n], datetime: `${start}T00:00:00Z/${end}T23:59:59Z`, limit: 200 };
+  const out = []; let req = { url: STAC, body };
+  for (let page = 0; page < 10 && req; page++) {
+    const r = await fetch(req.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req.body) });
+    if (!r.ok) throw new Error('STAC search failed: HTTP ' + r.status);
+    const d = await r.json(); out.push(...d.features);
+    const nx = (d.links || []).find(l => l.rel === 'next');
+    req = nx ? { url: nx.href || STAC, body: nx.body || body } : null;
+  }
+  return out;
+}
+const pad = n => String(n).padStart(2, '0');
+const lastDay = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();   // m = 1..12
+/* the season window of "year": months from..to; when it runs over New Year (e.g. Dec to Mar) the year is the one it ends in */
+function seasonWindow(year, from, to) {
+  const wrap = from > to, y0 = wrap ? year - 1 : year;
+  return { start: `${y0}-${pad(from)}-01`, end: `${year}-${pad(to)}-${pad(lastDay(year, to))}`, wrap };
+}
+/* acquisitions of one day (several MGRS tiles) form one group */
+function groupByDay(items) {
+  const g = new Map();
+  for (const it of items) { const d = it.properties.datetime.slice(0, 10); if (!g.has(d)) g.set(d, []); g.get(d).push(it); }
+  return [...g.entries()].map(([date, its]) => ({ date, items: its, tileCloud: its.reduce((a, b) => a + (b.properties['eo:cloud_cover'] ?? 100), 0) / its.length }));
+}
+
+/* ---------- reading pixels ---------- */
+const cogCache = new Map();
+function openCOG(url) {
+  if (!cogCache.has(url)) cogCache.set(url, (async () => {
+    const t = await GeoTIFF.fromUrl(url), n = await t.getImageCount(), imgs = [];
+    for (let i = 0; i < n; i++) imgs.push(await t.getImage(i));
+    return imgs; })());
+  return cogCache.get(url);
+}
+async function readAsset(grid, item, key) {
+  const epsg = item.properties['proj:epsg'] || +String(item.properties['proj:code'] || '').replace('EPSG:', '');
+  const imgs = await openCOG(item.assets[key].href), map = pixelMap(grid, epsg);
+  /* overviews carry no geotransform of their own: derive it from the full-resolution image */
+  const full = imgs[0], [ox, oy] = full.getOrigin(), [fx, fy] = full.getResolution();
+  let im = full;
+  for (const c of imgs) if (Math.abs(fx) * full.getWidth() / c.getWidth() <= grid.pixelM) im = c;   // coarsest overview that is still at least as fine as the output
+  const IW = im.getWidth(), IH = im.getHeight(), rx = fx * full.getWidth() / IW, ry = fy * full.getHeight() / IH;
+  let c0 = 1e12, c1 = -1e12, r0 = 1e12, r1 = -1e12;
+  for (let i = 0; i < map.X.length; i += 7) { const c = (map.X[i] - ox) / rx, r = (map.Y[i] - oy) / ry; c0 = Math.min(c0, c); c1 = Math.max(c1, c); r0 = Math.min(r0, r); r1 = Math.max(r1, r); }
+  const x0 = Math.max(0, Math.floor(c0) - 1), x1 = Math.min(IW, Math.ceil(c1) + 2), y0 = Math.max(0, Math.floor(r0) - 1), y1 = Math.min(IH, Math.ceil(r1) + 2);
+  if (x1 <= x0 || y1 <= y0) return null;
+  const ras = await im.readRasters({ window: [x0, y0, x1, y1], interleave: true }), ww = x1 - x0, ns = ras.length / (ww * (y1 - y0));
+  const { W, H } = grid, out = new Uint8Array(W * H * ns), got = new Uint8Array(W * H);
+  for (let p = 0; p < W * H; p++) {
+    const c = Math.floor((map.X[p] - ox) / rx) - x0, r = Math.floor((map.Y[p] - oy) / ry) - y0;
+    if (c < 0 || r < 0 || c >= ww || r >= y1 - y0) continue;
+    got[p] = 1; for (let k = 0; k < ns; k++) out[p * ns + k] = ras[(r * ww + c) * ns + k];
+  }
+  return { data: out, got, ns };
+}
+/* one acquisition day: SCL, and the colour picture when wanted; tiles of the same day fill each other's gaps */
+async function loadDay(grid, day, wantRGB) {
+  if (!day.scl) {
+    const scl = new Uint8Array(grid.W * grid.H);
+    for (const it of day.items) { const a = await readAsset(grid, it, 'scl'); if (!a) continue; for (let p = 0; p < scl.length; p++) if (!scl[p] && a.got[p] && a.data[p]) scl[p] = a.data[p]; }
+    day.scl = scl; day.bad = badFraction(grid, scl);
+  }
+  if (wantRGB && !day.rgb) {
+    const rgb = new Uint8Array(grid.W * grid.H * 3), have = new Uint8Array(grid.W * grid.H);
+    for (const it of day.items) { const a = await readAsset(grid, it, 'visual'); if (!a) continue;
+      for (let p = 0; p < have.length; p++) if (!have[p] && a.got[p] && (a.data[p * 3] | a.data[p * 3 + 1] | a.data[p * 3 + 2])) { have[p] = 1; rgb[p * 3] = a.data[p * 3]; rgb[p * 3 + 1] = a.data[p * 3 + 1]; rgb[p * 3 + 2] = a.data[p * 3 + 2]; } }
+    day.rgb = rgb;
+  }
+  return day;
+}
+function badFraction(grid, scl) {
+  let bad = 0; for (let p = 0; p < scl.length; p++) if (grid.inPoly[p] && BAD.has(scl[p])) bad++;
+  return grid.count ? bad / grid.count : 1;
+}
+async function pool(tasks, n, onDone) {
+  let i = 0, done = 0; const res = new Array(tasks.length);
+  await Promise.all(Array.from({ length: Math.min(n, tasks.length) }, async () => { while (i < tasks.length) { const k = i++; try { res[k] = await tasks[k](); } catch (err) { console.error('read failed:', err && err.message); res[k] = { error: err }; } onDone && onDone(++done, tasks.length); } }));
+  return res;
+}
+
+/* ---------- one year ---------- */
+async function buildYear(grid, year, from, to, say) {
+  const win = seasonWindow(year, from, to);
+  say(`${year}: searching scenes ${win.start} to ${win.end}`);
+  const found = await stacSearch(grid, win.start, win.end);
+  const days = groupByDay(found).sort((a, b) => a.tileCloud - b.tileCloud);
+  if (!days.length) return { year, kind: 'none', note: 'no Sentinel-2 L2A scene found in the season' };
+  const cand = days.slice(0, Math.max(MAX_SCORE, 0));
+  say(`${year}: scoring ${cand.length} of ${days.length} acquisition days by cloud in the polygon`);
+  await pool(cand.map(d => () => loadDay(grid, d, false)), 4);
+  const scored = cand.filter(d => d.scl).sort((a, b) => a.bad - b.bad || (a.date < b.date ? 1 : -1));
+  if (!scored.length) return { year, kind: 'none', note: 'scenes found but none could be read' };
+  const best = scored[0];
+  if (best.bad <= MAX_CLEAR) {
+    await loadDay(grid, best, true);
+    return { year, kind: 'scene', rgb: best.rgb, bad: best.bad, dates: [best.date], ids: best.items.map(i => i.id), mask: best.scl };
+  }
+  /* fallback: per-pixel median of the clear pixels of the best days of the season */
+  const use = scored.filter(d => d.bad < 0.9).slice(0, MAX_COMPOSITE);
+  if (!use.length) return { year, kind: 'none', note: `cloudiest case: best day has ${(best.bad * 100).toFixed(0)} % cloud or no data in the polygon`, bad: best.bad };
+  say(`${year}: no clear scene (best ${(best.bad * 100).toFixed(0)} % cloud); building a composite of ${use.length} days`);
+  await pool(use.map(d => () => loadDay(grid, d, true)), 3);
+  const { W, H } = grid, rgb = new Uint8Array(W * H * 3), left = new Uint8Array(W * H), vals = [[], [], []];
+  let holes = 0;
+  for (let p = 0; p < W * H; p++) {
+    vals[0].length = vals[1].length = vals[2].length = 0;
+    for (const d of use) if (d.rgb && !BAD.has(d.scl[p])) for (let k = 0; k < 3; k++) vals[k].push(d.rgb[p * 3 + k]);
+    if (vals[0].length) for (let k = 0; k < 3; k++) { const v = vals[k].sort((a, b) => a - b); rgb[p * 3 + k] = v[v.length >> 1]; }
+    else { left[p] = 1; if (grid.inPoly[p]) holes++; }
+  }
+  return { year, kind: 'composite', rgb, bad: grid.count ? holes / grid.count : 1, dates: use.map(d => d.date).sort(), ids: use.flatMap(d => d.items.map(i => i.id)), n: use.length, mask: left };
+}
+
+/* tropics: no summer. Pick the three months with the lowest mean tile cloud cover over all years (same months every year, so frames are comparable) */
+async function clearestQuarter(grid, y0, y1, say) {
+  say('Tropics: finding the clearest three months from the scene catalogue');
+  const sum = Array(12).fill(0), cnt = Array(12).fill(0);
+  for (let y = y0; y <= y1; y++) {
+    const items = await stacSearch(grid, `${y}-01-01`, `${y}-12-31`);
+    for (const g of groupByDay(items)) { const m = +g.date.slice(5, 7) - 1; sum[m] += g.tileCloud; cnt[m]++; }
+  }
+  const mean = sum.map((s, i) => cnt[i] ? s / cnt[i] : 100);
+  let bestM = 0, bestV = 1e9;
+  for (let m = 0; m < 12; m++) { const v = (mean[m] + mean[(m + 1) % 12] + mean[(m + 2) % 12]) / 3; if (v < bestV) { bestV = v; bestM = m; } }
+  return { from: bestM + 1, to: ((bestM + 2) % 12) + 1, meanCloud: bestV };
+}
+
+/* ---------- view ---------- */
+const state = { frames: [], idx: 0, timer: null, grid: null, name: '', run: 0 };
+function draw() {
+  const f = state.frames[state.idx], cv = $('cv'), g = state.grid;
+  if (!f) return;
+  const ctx = cv.getContext('2d');
+  if (f.rgb) {
+    const img = ctx.createImageData(g.W, g.H);
+    for (let p = 0; p < g.W * g.H; p++) {
+      if (f.mask && f.kind === 'composite' && f.mask[p]) { img.data[p * 4] = img.data[p * 4 + 1] = img.data[p * 4 + 2] = 40; }
+      else { img.data[p * 4] = f.rgb[p * 3]; img.data[p * 4 + 1] = f.rgb[p * 3 + 1]; img.data[p * 4 + 2] = f.rgb[p * 3 + 2]; }
+      img.data[p * 4 + 3] = 255; }
+    ctx.putImageData(img, 0, 0);
+  } else { ctx.fillStyle = '#222c31'; ctx.fillRect(0, 0, g.W, g.H); ctx.fillStyle = '#9fb0b8'; ctx.font = `${Math.round(g.W / 28)}px sans-serif`; ctx.textAlign = 'center'; ctx.fillText('no usable picture', g.W / 2, g.H / 2); ctx.textAlign = 'left'; }
+  if ($('outline').checked) {
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = Math.max(1.5, g.W / 400);
+    for (const poly of state.rings) for (const ring of poly) { ctx.beginPath();
+      ring.forEach(([x, y], i) => { const px = (x - g.w) / (g.e - g.w) * g.W, py = (g.n - y) / (g.n - g.s) * g.H; i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
+      ctx.stroke(); }
+  }
+  const fs = Math.max(14, Math.round(g.W / 22));
+  ctx.font = `600 ${fs}px sans-serif`; ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(0, 0, fs * 3.2, fs * 1.6);
+  ctx.fillStyle = '#fff'; ctx.fillText(String(f.year), fs * 0.4, fs * 1.15);
+  $('slider').value = state.idx;
+  $('caption').innerHTML = captionFor(f);
+}
+function captionFor(f) {
+  const pct = f.bad == null ? '' : (f.bad * 100).toFixed(1) + ' %';
+  if (f.kind === 'scene') return `${f.year}: single clear scene, ${f.dates[0]} (cloud or no data in polygon ${pct}).`;
+  if (f.kind === 'composite') return `<span class="warn">${f.year}: no clear single scene. Cloud-free composite (per-pixel median) of ${f.n} days, ${f.dates[0]} to ${f.dates[f.dates.length - 1]}; ${pct} of the polygon has no clear pixel (dark grey).</span>`;
+  return `<span class="warn">${f.year}: ${f.note}.</span>`;
+}
+function addRow(f) {
+  const tb = $('tbl').tBodies[0], tr = document.createElement('tr');
+  const src = f.kind === 'scene' ? 'single scene' : f.kind === 'composite' ? `composite of ${f.n} days` : 'none';
+  const cells = [f.year, src, f.dates ? (f.dates.length > 3 ? f.dates[0] + ' … ' + f.dates[f.dates.length - 1] : f.dates.join(', ')) : '', f.bad == null ? '' : (f.bad * 100).toFixed(1) + ' %', f.ids ? f.ids.slice(0, 3).join(', ') + (f.ids.length > 3 ? ' …' : '') : f.note || ''];
+  cells.forEach(t => { const td = document.createElement('td'); td.textContent = t; tr.appendChild(td); });
+  tb.appendChild(tr); $('tbl').hidden = false;
+}
+function play(on) {
+  clearInterval(state.timer); state.timer = null;
+  $('play').textContent = on ? 'Pause' : 'Play';
+  if (on && state.frames.length > 1) state.timer = setInterval(() => { state.idx = (state.idx + 1) % state.frames.length; draw(); }, +$('speed').value);
+}
+
+/* ---------- run ---------- */
+async function run(cfg) {
+  const my = ++state.run, say = t => { if (my === state.run) $('status').textContent = t; };
+  play(false); state.frames = []; $('tbl').tBodies[0].innerHTML = ''; $('tbl').hidden = true;
+  const g = state.grid = setupGrid(cfg.rings); state.rings = cfg.rings;
+  const cv = $('cv'); cv.width = g.W; cv.height = g.H;
+  const now = new Date(), y0 = Math.max(cfg.y0, FIRST_YEAR);
+  let from = +$('mFrom').value, to = +$('mTo').value;
+  const tropic = Math.abs(g.lat0) < 23.5;
+  if (cfg.auto) {
+    if (tropic) {
+      const q = await clearestQuarter(g, y0, (cfg.y1 || now.getUTCFullYear()) , say); if (my !== state.run) return;
+      from = q.from; to = q.to; cfg.note = `Tropics (latitude ${g.lat0.toFixed(1)}): no summer, so the three months with the lowest mean cloud cover in the catalogue, ${MONTHS[from - 1]} to ${MONTHS[to - 1]} (mean tile cloud ${q.meanCloud.toFixed(0)} %).`;
+    } else if (g.lat0 > 0) { from = 6; to = 9; cfg.note = `Northern summer, June to September.`; }
+    else { from = 12; to = 3; cfg.note = `Southern summer, December to March (a season is named after the year it ends in).`; }
+    $('mFrom').value = from; $('mTo').value = to; cfg.auto = false;
+  } else cfg.note = 'Season set by hand.';
+  $('seasonNote').textContent = cfg.note;
+  /* last year: the current year only once its season has ended */
+  let y1 = cfg.y1 || now.getUTCFullYear();
+  if (!cfg.y1 && seasonWindow(y1, from, to).end >= now.toISOString().slice(0, 10)) y1 -= 1;
+  const years = []; for (let y = y0; y <= y1; y++) years.push(y);
+  $('slider').max = 0;
+  for (const y of years) {
+    let f;
+    try { f = await buildYear(g, y, from, to, say); } catch (err) { f = { year: y, kind: 'none', note: 'error: ' + err.message }; console.error(err); }
+    if (my !== state.run) return;
+    state.frames.push(f); addRow(f);
+    $('slider').max = state.frames.length - 1; state.idx = state.frames.length - 1; draw();
+  }
+  const usable = state.frames.filter(f => f.rgb).length;
+  say(`Done: ${usable} of ${years.length} years have a picture.`);
+  state.idx = 0; draw(); if (usable > 1) play(true);
+  window.__done = true;
+}
+
+function init() {
+  const cfg = parseHash();
+  $('exampleLink').href = '#bbox=118.05,5.75,118.25,5.95&name=Example%20population';
+  $('exampleLink').addEventListener('click', () => setTimeout(() => location.reload(), 0));
+  if (!cfg.rings) { $('help').hidden = false; return; }
+  $('app').hidden = false; $('title').textContent = cfg.name;
+  for (const sel of [$('mFrom'), $('mTo')]) MONTHS.forEach((m, i) => sel.add(new Option(m, i + 1)));
+  $('play').onclick = () => play(!state.timer);
+  $('slider').oninput = e => { play(false); state.idx = +e.target.value; draw(); };
+  $('speed').onchange = () => { if (state.timer) play(true); };
+  $('outline').onchange = draw;
+  $('rebuild').onclick = () => run({ ...cfg, auto: false });
+  if (cfg.from && cfg.to) { $('mFrom').value = cfg.from; $('mTo').value = cfg.to; }
+  run({ ...cfg, auto: !(cfg.from && cfg.to) }).catch(err => { $('status').textContent = 'Error: ' + err.message; console.error(err); });
+}
+init();
+</script>
+</body>
+</html>
