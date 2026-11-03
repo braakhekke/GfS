@@ -62,6 +62,15 @@ The wire on the mockup: a drop-down "Look at one population closely" plus a butt
 - **Saved pictures per user:** finished years are stored in the browser's IndexedDB (key: version, hash of the polygon rounded to 4 decimals, months, year; also the tropics season search). Not shared between users or devices; lost if the user clears site data or uses a private window (the page then simply works without). Time to live 30 days (1 day for "no picture" results), at most 120 years kept, oldest dropped first. `CACHE_VERSION` in `index.html` must be raised whenever scoring or rendering changes. Link "forget saved pictures" in the footer. Tested: second open of the same population took 0 s (all chips "saved"). A different `from`/`to` or polygon is a new key.
 - **Test polygon in the mockup:** `test_alps` (Aletsch region) is in the mockup's drop-down, labelled as a test, so the northern-summer path can be tried there. It is not a population and is not in the table.
 
+## D-09 Delete a year, show the best single scene (owner request, 2026-11-03)
+The request ("from the scene list, make it possible to delete individual scenes or show the best non-composite image") was read as:
+- **Delete** (button per row of the scene table): takes that year out of the timelapse and the exports. It is reversible ("Show") and nothing is removed from the saved pictures. A year is one picture, so "scene" here means one year's frame, not one day inside a composite.
+- **Best single scene** (button on composite rows, plus a checkbox "best single scene instead of composites" for all years): shows the least cloudy single acquisition day of that year instead of the composite. It is **not clear**, by definition (the composite exists because no day met the 2 % rule), so the caption, the table ("x % cloud") and the export band say how much cloud, shadow or no data the polygon has. The percentage is from the coarse scoring grid, so it is approximate.
+- Both choices are kept per polygon in the browser (`localStorage`, key `gfs|<polygon hash>`), together with the saved pictures; the checkbox resets the per-year choices. Years with no picture are no longer frames in the player (they stay in the table and as chips).
+- Composites now carry their best single scene, so `CACHE_VERSION` went to `v2` (older saved pictures are ignored).
+- **Not built:** removing one day from inside a composite (e.g. one cloudy day that SCL missed) and re-computing it. That needs the day list per composite and a re-read; it is the other possible reading of the request (Q-11).
+- Tested 2026-11-03 in headless Chromium on the Borneo box (2019 to 2021): single scene toggle (2020: 8.1 % cloud), delete (frames 3 to 2, GIF export had 2 frames), choice survives a reload, Show restores, the checkbox switches all three years (3.5, 8.1 and 9.9 % cloud).
+
 ## Open questions (for the owner / project leader)
 
 - **Q-01** (answered 2026-11-03: public repo `braakhekke/GfS`, created by the owner.)
@@ -73,4 +82,5 @@ The wire on the mockup: a drop-down "Look at one population closely" plus a butt
 - **Q-07** (answered 2026-11-03 by the owner: the composite window of D-04.3 is fine **for now**; revisit with the project leader.)
 - **Q-08** Earth Search / AWS Open Data / Copernicus terms of use: read and quote them before the page is promoted (not yet read).
 - **Q-10** Does the first year 2017 hold outside Borneo? Check the earliest L2A scene per region the tool is used for (Earth Search), or make the first year depend on the polygon.
+- **Q-11** Do you also want to exclude individual days inside a composite (not just whole years)? See D-09.
 - **Q-09** How does the real Results page get the polygon into the link? Needs the Streamlit code (Q-04). Proposed ways for the GfS team: `docs/INTEGRATION.md`.

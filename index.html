@@ -45,6 +45,9 @@
   .chip.cached { border-color:var(--cache); background:#e8f0fb; cursor:pointer; }
   .chip.none, .chip.error { border-color:var(--none); background:#fbeceb; }
   .chip.on { outline:2px solid var(--ink); }
+  .chip.hid { opacity:.45; text-decoration:line-through; }
+  tr.hid td { color:#98a3a9; background:#f3f5f5; }
+  td button { padding:2px 8px; font-size:12px; margin-right:4px; }
   table { border-collapse:collapse; width:100%; margin-top:10px; font-size:12.5px; background:#fff; }
   th, td { border:1px solid var(--line); padding:4px 8px; text-align:left; }
   th { background:#eef2f2; }
@@ -72,6 +75,7 @@
       <label>Years <select id="yFrom"></select> to <select id="yTo"></select></label>
       <label>Season (months) <select id="mFrom"></select> to <select id="mTo"></select></label>
       <label><input type="checkbox" id="outline" checked> outline</label>
+      <label title="For years without a clear scene, show the least cloudy single scene instead of the composite (clouds stay visible)"><input type="checkbox" id="preferSingle"> best single scene instead of composites</label>
       <button id="rebuild">Rebuild</button>
     </div>
     <div class="note" id="yearNote"></div>
@@ -96,7 +100,7 @@
       <span id="exNote" class="row"></span>
     </div>
     <div id="caption"></div>
-    <table id="tbl" hidden><thead><tr><th>Year</th><th>Source</th><th>Date(s)</th><th>Cloud or no data in polygon</th><th>Scene(s)</th></tr></thead><tbody></tbody></table>
+    <table id="tbl" hidden><thead><tr><th>Year</th><th>Source</th><th>Date(s)</th><th>Cloud or no data in polygon</th><th>Scene(s)</th><th>In timelapse</th></tr></thead><tbody></tbody></table>
   </div>
   <footer>
     Contains modified Copernicus Sentinel data (Sentinel-2 L2A), read from the public AWS Open Data copy via Earth Search (Element 84).
@@ -121,7 +125,7 @@ const MIN_PIXEL_M = 10;               // never finer than the Sentinel-2 pixel
 const SCORE_PIXEL_M = 60;             // scoring reads the cloud mask at this coarser size (scenes are only judged, not shown)
 const SCORE_SIDE = 300;
 const YEAR_JOBS = 3;                  // years built at the same time
-const CACHE_VERSION = 'v1';           // bump when scoring or rendering changes, so saved pictures are not reused
+const CACHE_VERSION = 'v2';           // bump when scoring or rendering changes, so saved pictures are not reused
 const CACHE_TTL_MS = 30 * 864e5, CACHE_TTL_NONE_MS = 864e5, CACHE_MAX = 120;
 const BAD = new Set([0, 1, 3, 8, 9, 10]);   // SCL: no data, saturated/defective, cloud shadow, cloud medium/high, thin cirrus
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -372,7 +376,9 @@ async function buildYear(ctx, year, from, to, say, alive) {
     if (vals[0].length) for (let k = 0; k < 3; k++) { const v = vals[k].sort((a, b) => a - b); rgb[p * 3 + k] = v[v.length >> 1]; }
     else { left[p] = 1; if (grid.inPoly[p]) holes++; }
   }
-  return { year, kind: 'composite', rgb, bad: grid.count ? holes / grid.count : 1, dates: use.map(d => d.date).sort(), ids: use.flatMap(d => d.items.map(i => i.id)), n: use.length, mask: left };
+  /* the best single day is kept as well (it is in `use`, already read): the viewer can show it instead of the composite */
+  return { year, kind: 'composite', rgb, bad: grid.count ? holes / grid.count : 1, dates: use.map(d => d.date).sort(), ids: use.flatMap(d => d.items.map(i => i.id)), n: use.length, mask: left,
+           single: { rgb: best.rgb, bad: best.bad, date: best.date, ids: best.items.map(i => i.id) } };
 }
 
 /* tropics: no summer. Pick the three months with the lowest mean tile cloud cover over all years (same months every year, so frames are comparable) */
@@ -394,7 +400,7 @@ async function clearestQuarter(grid, rings, y0, y1, say) {
 }
 
 /* ---------- view ---------- */
-const state = { frames: [], idx: 0, timer: null, grid: null, name: '', run: 0, byYear: {}, years: [], stat: {} };
+const state = { hidden: new Set(), single: {}, preferSingle: false, pkey: '', frames: [], idx: 0, timer: null, grid: null, name: '', run: 0, byYear: {}, years: [], stat: {} };
 /* one frame (picture, outline, year) on any 2D context of size g.W x g.H; used by the screen and by the exports */
 function paintFrame(ctx, f, g) {
   if (f.rgb) {
@@ -415,9 +421,29 @@ function paintFrame(ctx, f, g) {
   ctx.font = `600 ${fs}px sans-serif`; ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(0, 0, fs * 3.2, fs * 1.6);
   ctx.fillStyle = '#fff'; ctx.fillText(String(f.year), fs * 0.4, fs * 1.15);
 }
+/* what the player shows: the years that have a picture and are not hidden; a composite year can show its best single scene instead */
+const prefsKey = () => 'gfs|' + state.pkey;
+function loadView() {
+  try { const v = JSON.parse(localStorage.getItem(prefsKey()) || '{}'); state.hidden = new Set(v.hidden || []); state.single = v.single || {}; state.preferSingle = !!v.prefer; }
+  catch { state.hidden = new Set(); state.single = {}; state.preferSingle = false; }
+  $('preferSingle').checked = state.preferSingle;
+}
+function saveView() { try { localStorage.setItem(prefsKey(), JSON.stringify({ hidden: [...state.hidden], single: state.single, prefer: state.preferSingle })); } catch {} }
+const useSingle = f => f.kind === 'composite' && f.single && (state.single[f.year] ?? state.preferSingle);
+const effective = f => useSingle(f) ? { year: f.year, kind: 'scene', rgb: f.single.rgb, bad: f.single.bad, dates: [f.single.date], ids: f.single.ids, forced: true } : f;
+function rebuildFrames(focusYear) {
+  const keepYear = focusYear || (state.frames[state.idx] || {}).year;
+  state.frames = state.years.filter(y => state.byYear[y] && state.byYear[y].rgb && !state.hidden.has(y)).map(y => effective(state.byYear[y]));
+  const i = state.frames.findIndex(f => f.year === keepYear);
+  state.idx = i >= 0 ? i : 0;
+  $('stage').hidden = !state.frames.length; $('slider').max = Math.max(0, state.frames.length - 1);
+  setExporting(state.running);
+  renderTable(); draw();
+}
+function viewChanged(year) { saveView(); rebuildFrames(year); }
 function draw() {
   const f = state.frames[state.idx];
-  if (!f) return;
+  if (!f) { $('caption').textContent = state.years.length && !state.running ? 'No year to show: all years are hidden or without a picture.' : ''; renderChips(); return; }
   paintFrame($('cv').getContext('2d'), f, state.grid);
   $('slider').value = state.idx;
   $('caption').innerHTML = captionFor(f);
@@ -425,20 +451,37 @@ function draw() {
 }
 function captionFor(f) {
   const pct = f.bad == null ? '' : (f.bad * 100).toFixed(1) + ' %';
+  if (f.kind === 'scene' && f.forced) return `<span class="warn">${f.year}: best single scene, ${f.dates[0]}, instead of the composite. Not clear: ${pct} of the polygon is cloud, shadow or no data.</span>`;
   if (f.kind === 'scene') return `${f.year}: single clear scene, ${f.dates[0]} (cloud or no data in polygon ${pct}).`;
   if (f.kind === 'composite') return `<span class="warn">${f.year}: no clear single scene. Cloud-free composite (per-pixel median) of ${f.n} days, ${f.dates[0]} to ${f.dates[f.dates.length - 1]}; ${pct} of the polygon has no clear pixel (dark grey).</span>`;
   return `<span class="warn">${f.year}: ${f.note}.</span>`;
 }
 function renderTable() {
   const tb = $('tbl').tBodies[0]; tb.innerHTML = '';
-  for (const f of state.frames) {
-    const tr = document.createElement('tr');
-    const src = f.kind === 'scene' ? 'single scene' : f.kind === 'composite' ? `composite of ${f.n} days` : 'none';
-    const cells = [f.year, src + (f.fromCache ? ' (saved)' : ''), f.dates ? (f.dates.length > 3 ? f.dates[0] + ' … ' + f.dates[f.dates.length - 1] : f.dates.join(', ')) : '', f.bad == null ? '' : (f.bad * 100).toFixed(1) + ' %', f.ids ? f.ids.slice(0, 3).join(', ') + (f.ids.length > 3 ? ' …' : '') : f.note || ''];
+  const raws = state.years.filter(y => state.byYear[y]).map(y => state.byYear[y]);
+  for (const f of raws) {
+    const tr = document.createElement('tr'), hid = state.hidden.has(f.year), single = useSingle(f);
+    if (hid) tr.className = 'hid';
+    const pct = x => (x * 100).toFixed(1) + ' %';
+    const src = f.kind === 'scene' ? 'single scene' : f.kind === 'composite' ? (single ? `best single scene (a composite of ${f.n} days exists)` : `composite of ${f.n} days`) : 'none';
+    const dates = single ? [f.single.date] : f.dates, ids = single ? f.single.ids : f.ids;
+    const cloud = f.bad == null ? '' : single ? pct(f.single.bad) + ' cloud' : f.kind === 'composite' ? pct(f.bad) + ' no clear pixel' : pct(f.bad);
+    const cells = [f.year, src + (f.fromCache ? ' (saved)' : ''), dates ? (dates.length > 3 ? dates[0] + ' … ' + dates[dates.length - 1] : dates.join(', ')) : '', cloud, ids ? ids.slice(0, 3).join(', ') + (ids.length > 3 ? ' …' : '') : f.note || ''];
     cells.forEach(t => { const td = document.createElement('td'); td.textContent = t; tr.appendChild(td); });
-    tb.appendChild(tr);
+    const td = document.createElement('td');
+    if (f.rgb) {
+      const hb = document.createElement('button'); hb.textContent = hid ? 'Show' : 'Delete'; hb.title = hid ? 'Put this year back into the timelapse and exports' : 'Take this year out of the timelapse and exports (can be put back)';
+      hb.onclick = () => { hid ? state.hidden.delete(f.year) : state.hidden.add(f.year); viewChanged(f.year); };
+      td.appendChild(hb);
+      if (f.kind === 'composite' && f.single) {
+        const sb = document.createElement('button'); sb.textContent = single ? 'Show composite' : 'Best single scene'; sb.title = single ? 'Back to the cloud-free composite' : 'Show the least cloudy single scene of this year instead of the composite';
+        sb.onclick = () => { state.single[f.year] = !single; viewChanged(f.year); };
+        td.appendChild(sb);
+      }
+    }
+    tr.appendChild(td); tb.appendChild(tr);
   }
-  $('tbl').hidden = !state.frames.length;
+  $('tbl').hidden = !raws.length;
 }
 /* the loading display: progress bar, headline with the count, one chip per year */
 const STAT_TEXT = { pending: 'waiting', search: 'searching', score: 'scoring', composite: 'composite', done: 'ready', cached: 'saved', none: 'none', error: 'error' };
@@ -447,10 +490,11 @@ function renderChips() {
   const cur = state.frames[state.idx];
   for (const y of state.years) {
     const st = state.stat[y] || { s: 'pending' }, d = document.createElement('div');
-    d.className = 'chip ' + st.s + (cur && cur.year === y ? ' on' : '');
+    d.className = 'chip ' + st.s + (cur && cur.year === y ? ' on' : '') + (state.hidden.has(y) ? ' hid' : '');
     d.innerHTML = `${y}<small>${st.msg && ['search', 'score', 'composite'].includes(st.s) ? st.msg : STAT_TEXT[st.s]}</small>`;
     d.title = st.tip || st.msg || '';
     if (['done', 'cached'].includes(st.s)) d.onclick = () => { play(false); const i = state.frames.findIndex(f => f.year === y); if (i >= 0) { state.idx = i; draw(); } };
+    if (state.hidden.has(y)) d.title = 'Deleted from the timelapse; use Show in the table below';
     box.appendChild(d);
   }
   const n = state.years.length, ready = state.years.filter(y => ['done', 'cached', 'none', 'error'].includes((state.stat[y] || {}).s)).length;
@@ -477,7 +521,7 @@ function exportCanvas(f) {
   const t = document.createElement('canvas'); t.width = g.W; t.height = g.H; paintFrame(t.getContext('2d'), f, g);
   ctx.drawImage(t, 0, 0);
   ctx.fillStyle = '#e8eef0'; ctx.font = `${fs}px sans-serif`; ctx.textBaseline = 'top';
-  const what = f.kind === 'scene' ? `scene ${f.dates[0]}` : `composite of ${f.n} days, ${f.dates[0]} to ${f.dates[f.dates.length - 1]}`;
+  const what = f.kind === 'scene' ? `${f.forced ? 'best single scene' : 'scene'} ${f.dates[0]}${f.forced ? `, ${(f.bad * 100).toFixed(0)} % cloud` : ''}` : `composite of ${f.n} days, ${f.dates[0]} to ${f.dates[f.dates.length - 1]}`;
   ctx.fillText(`${state.name ? state.name + ' · ' : ''}${f.year} · ${what}`, Math.round(fs * 0.5), g.H + Math.round(fs * 0.35));
   ctx.fillStyle = '#9fb0b8'; ctx.fillText('Contains modified Copernicus Sentinel data · Sentinel-2 L2A', Math.round(fs * 0.5), g.H + Math.round(fs * 1.55));
   return c;
@@ -542,7 +586,7 @@ async function run(cfg) {
   $('loadHead').textContent = 'Starting…'; $('status').textContent = '';
   const g = state.grid = setupGrid(cfg.rings), sg = setupGrid(cfg.rings, SCORE_PIXEL_M, SCORE_SIDE); state.rings = cfg.rings;
   const cv = $('cv'); cv.width = g.W; cv.height = g.H;
-  const pkey = polyKey(cfg.rings);
+  const pkey = state.pkey = polyKey(cfg.rings); loadView();
   let from = +$('mFrom').value, to = +$('mTo').value;
   const tropic = Math.abs(g.lat0) < 23.5;
   if (cfg.auto) {
@@ -565,10 +609,7 @@ async function run(cfg) {
     if (!alive()) return;
     state.byYear[f.year] = f; if (saved) f.fromCache = true;
     state.stat[f.year] = { s: f.kind === 'none' ? 'none' : saved ? 'cached' : 'done', msg: f.note };
-    const keep = state.frames[state.idx];
-    state.frames = years.filter(y => state.byYear[y]).map(y => state.byYear[y]);
-    state.idx = f.rgb || !keep ? state.frames.indexOf(f) : Math.max(0, state.frames.indexOf(keep));
-    $('stage').hidden = false; $('slider').max = state.frames.length - 1; renderTable(); draw();
+    rebuildFrames(f.rgb && !state.hidden.has(f.year) ? f.year : undefined);
   };
   const ctx = { grid: g, sg }, t0 = performance.now();
   await pool(years.map(y => async () => {
@@ -583,10 +624,10 @@ async function run(cfg) {
   }), YEAR_JOBS);
   if (!alive()) return;
   state.running = false;
-  const usable = state.frames.filter(f => f.rgb).length, secs = ((performance.now() - t0) / 1000).toFixed(0);
+  const usable = Object.values(state.byYear).filter(f => f.rgb).length, secs = ((performance.now() - t0) / 1000).toFixed(0);
   $('loading').classList.add('done'); $('loadHead').textContent = `Ready: ${usable} of ${years.length} years have a picture (${secs} s).`; $('status').textContent = '';
   renderChips(); setExporting(false);
-  state.idx = 0; draw(); if (usable > 1) play(true);
+  state.idx = 0; draw(); if (state.frames.length > 1) play(true);
   window.__done = true; window.__secs = +secs;
 }
 function fillYearSelects(lastY, cfg) {
@@ -610,6 +651,7 @@ function init() {
   $('slider').oninput = e => { play(false); state.idx = +e.target.value; draw(); };
   $('speed').onchange = () => { if (state.timer) play(true); };
   $('outline').onchange = draw;
+  $('preferSingle').onchange = e => { state.preferSingle = e.target.checked; state.single = {}; viewChanged(); };
   $('exGif').onclick = guarded(exportGif); $('exVideo').onclick = guarded(exportVideo); $('exPng').onclick = exportPng;
   $('rebuild').onclick = () => run({ ...cfg, auto: false });
   $('forget').onclick = async () => { await store.clear(); showCacheInfo(); $('status').textContent = 'Saved pictures removed from this browser.'; };
