@@ -86,6 +86,15 @@ The year and season boxes and "Rebuild" apply only to a finished run (changing t
 - **Finding while testing the Turkey polygon:** some Earth Search items (5 of 96 over the Amanos area in Jul to Aug 2020) have asset links of the form `s3://sentinel-s2-l2a/...` (original JP2 files on a bucket that needs requester-pays credentials) instead of https COG links; the browser cannot read them and the first run logged failed reads. Such items are now **skipped** (both `scl` and `visual` must be https); if a year has only such scenes it says "n scenes found, but none in a format the browser can read". I did not check how common this is elsewhere or in which years it occurs.
 - **Turkey run** (full 2017 to 2026, northern summer, first scene of the area 2016-11-02): ten years, all single clear scenes, 62 s fresh, GIF export with progress worked.
 
+## D-13 High-resolution export (owner, 2026-11-03: "make sure export happens with proper high resolution")
+Before, every export was the 800 px picture shown on screen (about 20 to 55 m per pixel for a 15 to 45 km polygon), so a PNG or video was coarser than Sentinel-2's own 10 m.
+- **New "Quality" menu** in the export panel: **High (10 m pixels)**, the default, and **As shown** (the old behaviour). The panel states the sizes that will come out, e.g. "PNG 1927 × 1924 px (10 m per pixel), video 1920 × 1917 px (10 m per pixel), GIF 1000 × 999 px (19 m per pixel)".
+- **How High works:** the exact same scenes (ids kept in the frame, fetched again from Earth Search) are read again on a finer grid, from the full-resolution COG (10 m), and composites are recomputed on that grid with the same median rule. Nothing is sharpened or invented; the pixels are the delivered TCI pixels. Re-read pictures are kept in memory for the session so repeated exports are quick.
+- **Size caps (long side):** PNG 2500 px (the same limit the TSF project works to), video 1920 px, GIF 1000 px (GIF files and encoding explode beyond that). A polygon too wide for 10 m inside the cap gets the finest pixel that fits, and the panel says so. These caps are my choice, not tested on phones; a very large composite can run out of memory in the browser, in which case the export says "Export failed" and "As shown" still works.
+- **Video:** a picture smaller than 1080 px on the long side is enlarged in **whole pixels without smoothing** so that the video is not tiny (only in High); bitrate scales with size (8 to 25 Mbit/s).
+- **Measured** on the Borneo box 16 km wide (Mar to May, 2024 and 2025, composites): screen picture 800 px = 24 m per pixel; High PNG 1927 × 1924 px, 10 m, took 18 s (including re-reading the scenes); "As shown" PNG 800 px, instant; High MP4 (1920 × 2056 px, 515 kB, 2 frames) took 33 s. A side-by-side crop showed visible new detail in the high version (roofs, shore lines, mud flats) that the 800 px picture smears.
+- **Not tested:** GIF at high quality (only through the size line), Safari/Firefox, phones, large polygons at the caps, playback of the MP4 in other players.
+
 ## Open questions (for the owner / project leader)
 
 - **Q-01** (answered 2026-11-03: public repo `braakhekke/GfS`, created by the owner.)

@@ -63,6 +63,7 @@
   #caption { min-height:1.5em; }
   #exports { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   #exports .lbl { color:var(--muted); }
+  #exports .ql { margin-left:auto; display:inline-flex; gap:6px; align-items:center; color:var(--muted); }
   #exProgWrap { display:flex; gap:10px; align-items:center; flex:1; min-width:220px; }
   #exProg { flex:1; height:6px; background:var(--todo); border-radius:3px; overflow:hidden; max-width:320px; }
   #exNote { color:var(--muted); font-size:12.5px; }
@@ -133,8 +134,10 @@
       <button id="exVideo" disabled>Video</button>
       <button id="exGif" disabled>GIF</button>
       <button id="exPng" disabled>This frame (PNG)</button>
+      <label class="ql">Quality <select id="exQuality"><option value="high">High (10 m pixels)</option><option value="standard">As shown</option></select></label>
       <div id="exProgWrap" hidden><div id="exProg"><i></i></div><span id="exNote"></span></div>
       <span id="exDone" class="note"></span>
+      <div id="exInfo" class="note" style="flex-basis:100%"></div>
     </div>
     <div class="panel tablewrap">
       <table id="tbl" hidden><thead><tr><th>Year</th><th>Source</th><th>Date(s)</th><th>Cloud / no data</th><th>Scene(s)</th><th></th></tr></thead><tbody></tbody></table>
@@ -191,7 +194,7 @@ function parseHash() {
 
 /* ---------- geometry ---------- */
 let gridCounter = 0;
-function setupGrid(rings, minPixelM = MIN_PIXEL_M, maxSide = MAX_SIDE) {
+function setupGrid(rings, minPixelM = MIN_PIXEL_M, maxSide = MAX_SIDE, withMask = true) {
   let w = 180, s = 90, e = -180, n = -90;
   for (const poly of rings) for (const ring of poly) for (const [x, y] of ring) { w = Math.min(w, x); e = Math.max(e, x); s = Math.min(s, y); n = Math.max(n, y); }
   const padX = Math.max((e - w) * 0.08, 0.0005), padY = Math.max((n - s) * 0.08, 0.0005);
@@ -199,13 +202,13 @@ function setupGrid(rings, minPixelM = MIN_PIXEL_M, maxSide = MAX_SIDE) {
   const lat0 = (s + n) / 2, mx = (e - w) * Math.cos(lat0 * Math.PI / 180) * 111320, my = (n - s) * 110574;
   const pixelM = Math.max(minPixelM, Math.max(mx, my) / maxSide);
   const W = Math.max(2, Math.round(mx / pixelM)), H = Math.max(2, Math.round(my / pixelM));
-  const inPoly = new Uint8Array(W * H);
-  for (let r = 0; r < H; r++) { const lat = n - (r + 0.5) / H * (n - s);
+  const inPoly = withMask ? new Uint8Array(W * H) : null;   // large export grids skip the polygon mask (not needed to draw)
+  if (withMask) for (let r = 0; r < H; r++) { const lat = n - (r + 0.5) / H * (n - s);
     for (let c = 0; c < W; c++) { const lon = w + (c + 0.5) / W * (e - w);
       let inside = false;
       for (const poly of rings) { let k = pointIn(poly[0], lon, lat); if (k) for (let h = 1; h < poly.length; h++) if (pointIn(poly[h], lon, lat)) { k = false; break; } if (k) { inside = true; break; } }
       inPoly[r * W + c] = inside ? 1 : 0; } }
-  let count = 0; for (let i = 0; i < inPoly.length; i++) count += inPoly[i];
+  let count = 0; if (inPoly) for (let i = 0; i < inPoly.length; i++) count += inPoly[i];
   return { id: ++gridCounter, w, s, e, n, W, H, pixelM, inPoly, count, lat0 };
 }
 function pointIn(ring, x, y) {
@@ -318,8 +321,8 @@ async function scoreDay(sg, day) {
   return day;
 }
 /* composite input: the full grid, cloud mask and colour picture */
-async function loadDayFull(grid, day) {
-  if (!day.scl) day.scl = await readSCL(grid, day);
+async function loadDayFull(grid, day, needScl = true) {
+  if (needScl && !day.scl) day.scl = await readSCL(grid, day);
   if (!day.rgb) {
     const rgb = new Uint8Array(grid.W * grid.H * 3), have = new Uint8Array(grid.W * grid.H);
     for (const it of day.items) { const a = await readAsset(grid, it, 'visual'); if (!a) continue;
@@ -407,16 +410,9 @@ async function buildYear(ctx, year, from, to, say, alive) {
   say(year, 'composite', `${use.length}-day composite`, `no clear scene (best ${(best.bad * 100).toFixed(0)} % cloud), building a composite of ${use.length} days`);
   await pool(use.map(d => () => loadDayFull(grid, d)), 3);
   if (!alive()) return null;
-  const { W, H } = grid, rgb = new Uint8Array(W * H * 3), left = new Uint8Array(W * H), vals = [[], [], []];
-  let holes = 0;
-  for (let p = 0; p < W * H; p++) {
-    vals[0].length = vals[1].length = vals[2].length = 0;
-    for (const d of use) if (d.rgb && d.scl && !BAD.has(d.scl[p])) for (let k = 0; k < 3; k++) vals[k].push(d.rgb[p * 3 + k]);
-    if (vals[0].length) for (let k = 0; k < 3; k++) { const v = vals[k].sort((a, b) => a - b); rgb[p * 3 + k] = v[v.length >> 1]; }
-    else { left[p] = 1; if (grid.inPoly[p]) holes++; }
-  }
+  const c = compose(grid, use);
   /* the best single day is kept as well (it is in `use`, already read): the viewer can show it instead of the composite */
-  return { year, kind: 'composite', rgb, bad: grid.count ? holes / grid.count : 1, dates: use.map(d => d.date).sort(), ids: use.flatMap(d => d.items.map(i => i.id)), n: use.length, mask: left,
+  return { year, kind: 'composite', rgb: c.rgb, bad: grid.count ? c.holes / grid.count : 1, dates: use.map(d => d.date).sort(), ids: use.flatMap(d => d.items.map(i => i.id)), n: use.length, mask: c.left,
            single: { rgb: best.rgb, bad: best.bad, date: best.date, ids: best.items.map(i => i.id) } };
 }
 
@@ -428,6 +424,18 @@ async function earliestScene(grid, pkey) {
   const date = d.features.length ? d.features[0].properties.datetime.slice(0, 10) : null;
   if (date) await store.put(key, { kind: 'earliest', date });
   return date;
+}
+/* per-pixel median of the clear pixels of several days; pixels with no clear value are marked in `left` */
+function compose(grid, use) {
+  const { W, H } = grid, rgb = new Uint8Array(W * H * 3), left = new Uint8Array(W * H), vals = [[], [], []];
+  let holes = 0;
+  for (let p = 0; p < W * H; p++) {
+    vals[0].length = vals[1].length = vals[2].length = 0;
+    for (const d of use) if (d.rgb && d.scl && !BAD.has(d.scl[p])) for (let k = 0; k < 3; k++) vals[k].push(d.rgb[p * 3 + k]);
+    if (vals[0].length) for (let k = 0; k < 3; k++) { const v = vals[k].sort((a, b) => a - b); rgb[p * 3 + k] = v[v.length >> 1]; }
+    else { left[p] = 1; if (!grid.inPoly || grid.inPoly[p]) holes++; }
+  }
+  return { rgb, left, holes };
 }
 /* tropics: no summer. Pick the three months with the lowest mean tile cloud cover over all years (same months every year, so frames are comparable) */
 async function clearestQuarter(grid, rings, y0, y1, say) {
@@ -569,16 +577,78 @@ function play(on) {
 /* An export frame is the on-screen frame plus a credit band; years without a picture are left out. Speed follows the Speed menu. */
 const even = n => n + (n % 2);
 function exportFrames() { return state.frames.filter(f => f.rgb); }
-function exportCanvas(f) {
-  const g = state.grid, fs = Math.max(11, Math.round(g.W / 40)), band = Math.round(fs * 2.9), c = document.createElement('canvas');
-  c.width = even(g.W); c.height = even(g.H + band);
+/* ---- resolution ----
+   "Standard" exports the picture as shown (at most 800 px, never finer than 10 m). "High" re-reads the same scenes on a finer grid:
+   10 m per pixel (the Sentinel-2 pixel) as far as the size caps allow (PNG 2500 px on the long side, video 1920 px, GIF 1000 px; files, memory and encoders get heavy beyond that).
+   A polygon wider than the cap allows gets the finest pixel that fits and the page says which. Nothing is sharpened or invented; a small picture is only enlarged
+   in whole pixels (no smoothing) for the video, so it is not tiny. */
+const EXPORT_CAP = { png: 2500, video: 1920, gif: 1000 };
+function exportSize(kind) {
+  if ($('exQuality').value === 'standard') { const g = state.grid; return { W: g.W, H: g.H, pixelM: g.pixelM, same: true }; }
+  const h = setupGrid(state.rings, MIN_PIXEL_M, EXPORT_CAP[kind], false);
+  return { W: h.W, H: h.H, pixelM: h.pixelM, same: h.pixelM >= state.grid.pixelM - 0.01 };
+}
+function updateExInfo() {
+  if (!state.rings) return;
+  const one = k => { const z = exportSize(k); return z.same ? { W: state.grid.W, H: state.grid.H, pixelM: state.grid.pixelM } : z; };
+  const fmt = (name, z) => `${name} ${z.W} × ${z.H} px (${z.pixelM < 10.5 ? '10' : z.pixelM.toFixed(0)} m per pixel)`;
+  const p = one('png'), v = one('video'), g = one('gif');
+  $('exInfo').textContent = ($('exQuality').value === 'standard' ? 'As shown: ' : 'Export size: ') + [fmt('PNG', p), fmt('video', v), fmt('GIF', g)].join(', ')
+    + ($('exQuality').value === 'high' && p.pixelM > 10.5 ? '. This polygon is too wide for 10 m pixels inside the size limits; the finest pixel that fits is used.' : '.');
+}
+const hiStore = new Map(), itemStore = new Map();
+async function itemsById(ids) {
+  const need = ids.filter(i => !itemStore.has(i));
+  for (let i = 0; i < need.length; i += 40) {
+    const d = await stacPost(STAC, { collections: [COLLECTION], ids: need.slice(i, i + 40), limit: 100 });
+    for (const f of d.features) itemStore.set(f.id, f);
+  }
+  return ids.map(i => itemStore.get(i)).filter(Boolean);
+}
+/* the same scene(s) of a frame read again on a finer grid */
+async function hiFrame(f, hg) {
+  const key = `${state.pkey}|${f.year}|${f.forced ? 'single' : f.kind}|${hg.W}x${hg.H}`;
+  if (hiStore.has(key)) return hiStore.get(key);
+  const days = groupByDay(await itemsById(f.ids));
+  if (!days.length) throw new Error(`the scenes of ${f.year} could not be found again`);
+  let out;
+  if (f.kind === 'composite') {
+    await pool(days.map(d => () => loadDayFull(hg, d, true)), 3);
+    const c = compose(hg, days.filter(d => d.rgb && d.scl));
+    out = { ...f, rgb: c.rgb, mask: c.left };
+  } else {
+    await loadDayFull(hg, days[0], false);
+    out = { ...f, rgb: days[0].rgb, mask: undefined };
+  }
+  if (hiStore.size > 12) hiStore.delete(hiStore.keys().next().value);
+  hiStore.set(key, out);
+  for (const k of [...mapCache.keys()]) if (k.startsWith(hg.id + '/')) mapCache.delete(k);   // free the big coordinate tables
+  return out;
+}
+/* frames + grid for an export; report(note, 0..1) while the pictures are re-read */
+async function exportSet(kind, frames, report) {
+  if ($('exQuality').value === 'standard') return { grid: state.grid, frames };
+  const z = exportSize(kind);
+  if (z.same) return { grid: state.grid, frames };
+  const hg = setupGrid(state.rings, MIN_PIXEL_M, EXPORT_CAP[kind], false), out = [];
+  for (let i = 0; i < frames.length; i++) {
+    report(`Reading ${hg.W} × ${hg.H} px pictures: ${i + 1} of ${frames.length} (${frames[i].year})`, i / frames.length);
+    out.push(await hiFrame(frames[i], hg));
+  }
+  return { grid: hg, frames: out };
+}
+/* one export frame: the picture plus a credit band; scale > 1 enlarges in whole pixels without smoothing */
+function exportCanvas(f, g, scale = 1) {
+  const w = g.W * scale, h = g.H * scale, fs = Math.max(11, Math.round(w / 40)), band = Math.round(fs * 2.9), c = document.createElement('canvas');
+  c.width = even(w); c.height = even(h + band);
   const ctx = c.getContext('2d'); ctx.fillStyle = '#0e1417'; ctx.fillRect(0, 0, c.width, c.height);
   const t = document.createElement('canvas'); t.width = g.W; t.height = g.H; paintFrame(t.getContext('2d'), f, g);
-  ctx.drawImage(t, 0, 0);
+  ctx.imageSmoothingEnabled = scale === 1;
+  ctx.drawImage(t, 0, 0, w, h);
   ctx.fillStyle = '#e8eef0'; ctx.font = `${fs}px sans-serif`; ctx.textBaseline = 'top';
   const what = f.kind === 'scene' ? `${f.forced ? 'best single scene' : 'scene'} ${f.dates[0]}${f.forced ? `, ${(f.bad * 100).toFixed(0)} % cloud` : ''}` : `composite of ${f.n} days, ${f.dates[0]} to ${f.dates[f.dates.length - 1]}`;
-  ctx.fillText(`${state.name ? state.name + ' · ' : ''}${f.year} · ${what}`, Math.round(fs * 0.5), g.H + Math.round(fs * 0.35));
-  ctx.fillStyle = '#9fb0b8'; ctx.fillText('Contains modified Copernicus Sentinel data · Sentinel-2 L2A', Math.round(fs * 0.5), g.H + Math.round(fs * 1.55));
+  ctx.fillText(`${state.name ? state.name + ' · ' : ''}${f.year} · ${what}`, Math.round(fs * 0.5), h + Math.round(fs * 0.35));
+  ctx.fillStyle = '#9fb0b8'; ctx.fillText('Contains modified Copernicus Sentinel data · Sentinel-2 L2A', Math.round(fs * 0.5), h + Math.round(fs * 1.55));
   return c;
 }
 function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10000); }
@@ -593,49 +663,59 @@ function setExporting(on, note, frac) {
 }
 
 async function exportGif() {
-  const fr = exportFrames(), delay = +$('speed').value;
-  setExporting(true, 'Loading the GIF encoder…', 0);
+  const delay = +$('speed').value;
+  setExporting(true, 'Preparing…', 0);
+  const set = await exportSet('gif', exportFrames(), (n, fr) => setExporting(true, n, fr * 0.5));
+  setExporting(true, 'Loading the GIF encoder…', 0.5);
   const { GIFEncoder, quantize, applyPalette } = await import('https://cdn.jsdelivr.net/npm/gifenc@1.0.3/dist/gifenc.esm.js');
-  const gif = GIFEncoder();
+  const gif = GIFEncoder(), fr = set.frames;
   for (let i = 0; i < fr.length; i++) {
-    setExporting(true, `GIF: frame ${i + 1} of ${fr.length}`, 0.05 + 0.9 * i / fr.length);
+    setExporting(true, `GIF: encoding frame ${i + 1} of ${fr.length}`, 0.52 + 0.46 * i / fr.length);
     await new Promise(r => setTimeout(r));
-    const c = exportCanvas(fr[i]), px = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    const c = exportCanvas(fr[i], set.grid), px = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
     const pal = quantize(px, 256);   // one palette per frame: satellite colours band badly with a shared palette
     gif.writeFrame(applyPalette(px, pal), c.width, c.height, { palette: pal, delay: i === fr.length - 1 ? delay * 2 : delay });
   }
   gif.finish(); setExporting(true, 'GIF: saving', 1);
   download(new Blob([gif.bytes()], { type: 'image/gif' }), fileBase() + '.gif');
-  setExporting(false, 'GIF saved.');
+  setExporting(false, `GIF saved (${set.grid.W} × ${set.grid.H} px).`);
 }
 async function exportVideo() {
-  const fr = exportFrames(), delay = +$('speed').value;
+  const delay = +$('speed').value;
   if (typeof MediaRecorder === 'undefined') { setExporting(false, 'This browser cannot record video; use the GIF.'); return; }
   const type = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find(t => MediaRecorder.isTypeSupported(t));
   if (!type) { setExporting(false, 'This browser cannot record video; use the GIF.'); return; }
-  const first = exportCanvas(fr[0]), c = document.createElement('canvas'); c.width = first.width; c.height = first.height;
-  const ctx = c.getContext('2d'), rec = new MediaRecorder(c.captureStream(30), { mimeType: type, videoBitsPerSecond: 8e6 }), chunks = [];
+  setExporting(true, 'Preparing…', 0);
+  const set = await exportSet('video', exportFrames(), (n, fr) => setExporting(true, n, fr * 0.5)), fr = set.frames;
+  const long = Math.max(set.grid.W, set.grid.H), scale = $('exQuality').value === 'high' && long < 1080 ? Math.ceil(1080 / long) : 1;
+  const first = exportCanvas(fr[0], set.grid, scale), c = document.createElement('canvas'); c.width = first.width; c.height = first.height;
+  const bits = Math.min(25e6, Math.max(8e6, c.width * c.height * 6));
+  const ctx = c.getContext('2d'), rec = new MediaRecorder(c.captureStream(30), { mimeType: type, videoBitsPerSecond: bits }), chunks = [];
   rec.ondataavailable = e => e.data.size && chunks.push(e.data);
   const stopped = new Promise(r => rec.onstop = r);
   ctx.drawImage(first, 0, 0); rec.start();
   for (let i = 0; i < fr.length; i++) {
     const hold = i === fr.length - 1 ? delay * 2 : delay, t0 = performance.now();
-    ctx.drawImage(exportCanvas(fr[i]), 0, 0);
+    ctx.drawImage(exportCanvas(fr[i], set.grid, scale), 0, 0);
     /* a video is recorded in real time: the bar advances with the clock inside each frame */
     while (performance.now() - t0 < hold) {
-      setExporting(true, `Video: recording year ${fr[i].year} (${i + 1} of ${fr.length}), in real time`, (i + Math.min(1, (performance.now() - t0) / hold)) / fr.length);
+      setExporting(true, `Video: recording year ${fr[i].year} (${i + 1} of ${fr.length}), in real time`, 0.5 + 0.5 * (i + Math.min(1, (performance.now() - t0) / hold)) / fr.length);
       await new Promise(r => setTimeout(r, 80));
     }
   }
   rec.stop(); await stopped;
   const ext = type.startsWith('video/mp4') ? 'mp4' : 'webm';
   download(new Blob(chunks, { type }), fileBase() + '.' + ext);
-  setExporting(false, `Video saved (${ext}).`);
+  setExporting(false, `Video saved (${ext}, ${c.width} × ${c.height} px).`);
 }
-function exportPng() {
+async function exportPng() {
   const f = state.frames[state.idx]; if (!f || !f.rgb) return;
-  $('exDone').textContent = '';
-  exportCanvas(f).toBlob(b => download(b, `${fileBase().replace('-timelapse', '')}-${f.year}.png`), 'image/png');
+  setExporting(true, 'Preparing…', 0);
+  const set = await exportSet('png', [f], (n, fr) => setExporting(true, n, fr));
+  setExporting(true, 'PNG: saving', 0.95);
+  const blob = await new Promise(r => exportCanvas(set.frames[0], set.grid).toBlob(r, 'image/png'));
+  download(blob, `${fileBase().replace('-timelapse', '')}-${f.year}.png`);
+  setExporting(false, `PNG saved (${set.grid.W} × ${set.grid.H} px).`);
 }
 const guarded = fn => async () => { try { await fn(); } catch (err) { console.error(err); setExporting(false, 'Export failed: ' + err.message); } };
 
@@ -654,7 +734,7 @@ async function runInner(cfg) {
     if (!alive()) return;
     if (msg === undefined) { $('status').textContent = y; return; }
     state.stat[y] = { s, msg, tip }; renderChips(); };
-  play(false); $('stage').hidden = true; state.frames = []; state.byYear = {}; state.stat = {}; state.years = []; state.running = true; setExporting(true);
+  hiStore.clear(); play(false); $('stage').hidden = true; state.frames = []; state.byYear = {}; state.stat = {}; state.years = []; state.running = true; setExporting(true);
   $('loading').classList.remove('done'); $('tbl').hidden = true; $('chips').innerHTML = ''; $('progress').firstElementChild.style.width = '0';
   $('loadHead').textContent = 'Starting…'; $('status').textContent = '';
   const g = state.grid = setupGrid(cfg.rings), sg = setupGrid(cfg.rings, SCORE_PIXEL_M, SCORE_SIDE); state.rings = cfg.rings;
@@ -705,7 +785,7 @@ async function runInner(cfg) {
   state.running = false;
   const usable = Object.values(state.byYear).filter(f => f.rgb).length, secs = ((performance.now() - t0) / 1000).toFixed(0);
   $('loading').classList.add('done'); $('loadHead').textContent = `Ready: ${usable} of ${years.length} years have a picture (${secs} s).`; $('status').textContent = '';
-  renderChips(); setExporting(false);
+  renderChips(); setExporting(false); updateExInfo();
   state.idx = 0; draw(); if (state.frames.length > 1) play(true);
   window.__done = true; window.__secs = +secs;
 }
@@ -731,7 +811,8 @@ function init() {
   $('speed').onchange = () => { if (state.timer) play(true); };
   $('outline').onchange = draw;
   $('preferSingle').onchange = e => { state.preferSingle = e.target.checked; state.single = {}; viewChanged(); };
-  $('exGif').onclick = guarded(exportGif); $('exVideo').onclick = guarded(exportVideo); $('exPng').onclick = exportPng;
+  $('exQuality').onchange = updateExInfo;
+  $('exGif').onclick = guarded(exportGif); $('exVideo').onclick = guarded(exportVideo); $('exPng').onclick = guarded(exportPng);
   $('rebuild').onclick = () => run({ ...cfg, auto: false });
   $('forget').onclick = async () => { await store.clear(); showCacheInfo(); $('status').textContent = 'Saved pictures removed from this browser.'; };
   showCacheInfo();
