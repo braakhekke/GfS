@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Results page mockup (GfS)</title>
+<!--
+  MOCKUP of https://www.gfstool.com/Results, built from the screenshots in docs/TOOL_WALKTHROUGH.md (14 to 17),
+  because the Streamlit source is not available to us. It is NOT the real tool and holds NO real data:
+  the three polygons below are invented shapes around the locations seen in the example run (Borneo).
+  Purpose: a stand-in for the Results page on which the "look at this population" wire is built and tested.
+  The wire: select a population (drop-down or popup button), the link opens ../index.html in a new window
+  with the polygon in the hash (format: docs/URL_CONTRACT.md).
+-->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<style>
+  :root { --ink:#262730; --muted:#6b6f7b; --line:#dfe1e6; --side:#f0f2f6; --accent:#ff4b4b; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.5 "Source Sans Pro", system-ui, sans-serif; color:var(--ink); display:flex; min-height:100vh; }
+  nav { width:260px; background:var(--side); padding:60px 18px; flex:none; }
+  nav a { display:block; padding:6px 10px; color:var(--ink); text-decoration:none; border-radius:6px; }
+  nav a.on { background:#e1e4ea; font-weight:600; }
+  .banner { position:fixed; top:0; left:0; right:0; background:#fff3cd; border-bottom:1px solid #e6d58a; padding:4px 12px; font-size:12px; z-index:1000; }
+  main { flex:1; padding:56px 32px 32px; max-width:1100px; }
+  h1 { font-size:34px; margin:10px 0 8px; } h2 { font-size:20px; margin:18px 0 6px; }
+  #map { height:420px; border-radius:4px; }
+  .sel { display:flex; gap:12px; align-items:end; margin:14px 0; flex-wrap:wrap; }
+  .sel label { display:block; font-size:12px; color:var(--muted); }
+  select { font:inherit; padding:7px 10px; min-width:240px; border:1px solid var(--line); border-radius:6px; background:var(--side); }
+  a.btn { display:inline-block; font:inherit; padding:7px 14px; border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--ink); text-decoration:none; }
+  a.btn:hover { border-color:var(--accent); color:var(--accent); }
+  a.btn[aria-disabled=true] { opacity:.45; pointer-events:none; }
+  table { border-collapse:collapse; width:100%; font-size:13px; } th,td { border:1px solid var(--line); padding:4px 8px; text-align:left; } th { background:var(--side); }
+  tr.pick td { background:#fff0f0; }
+  .leaflet-popup-content a.btn { margin-top:6px; }
+  @media (max-width:760px) { nav { display:none; } }
+</style>
+</head>
+<body>
+<div class="banner">Mockup of the GfS Results page: invented polygons, not real tool output. Source of the layout: screenshots 14 to 17.</div>
+<nav>
+  <a>Methods</a><a>Input form</a><a class="on">Results</a>
+</nav>
+<main>
+  <h1>Results</h1>
+  <p><b>The land cover classes used are:</b> Treecover</p>
+  <div id="map"></div>
+
+  <div class="sel">
+    <div><label for="pick">Look at one population closely</label>
+      <select id="pick"><option value="">Select a population</option></select></div>
+    <a class="btn" id="open" target="_blank" rel="noopener" aria-disabled="true">Open Sentinel-2 timelapse (new window)</a>
+  </div>
+
+  <h2>Estimate effective population size</h2>
+  <table id="tbl"><thead><tr><th>Name</th><th>Population_Density</th><th>nenc</th><th>pop_size</th><th>effective_size</th><th>habitat_area</th></tr></thead><tbody></tbody></table>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+'use strict';
+/* Mock populations: same fields as the real popup (name, Population_Density, nenc, pop_size, effective_size).
+   habitat_area values are the ones read from screenshot 15 (794.69, 763.8, 194.72); shapes and positions are invented. */
+const blob = (lon, lat, r, n = 14) => { const ring = []; for (let i = 0; i < n; i++) { const a = i / n * 2 * Math.PI, k = r * (1 + 0.25 * Math.sin(3 * a + lon)); ring.push([+(lon + k * Math.cos(a)).toFixed(5), +(lat + k * Math.sin(a) * 0.95).toFixed(5)]); } ring.push(ring[0]); return ring; };
+const POPS = [
+  { name: 'pop_1', lon: 110.45, lat: 1.55, r: 0.12, Population_Density: null, nenc: 0.1, pop_size: 0, effective_size: 0, habitat_area: 794.69 },
+  { name: 'pop_2', lon: 110.80, lat: 1.50, r: 0.14, Population_Density: null, nenc: 0.1, pop_size: 0, effective_size: 0, habitat_area: 763.8 },
+  { name: 'pop_3', lon: 118.15, lat: 5.85, r: 0.16, Population_Density: null, nenc: 0.1, pop_size: 0, effective_size: 0, habitat_area: 194.72 }
+].map(p => ({ ...p, feature: { type: 'Feature', properties: { name: p.name }, geometry: { type: 'Polygon', coordinates: [blob(p.lon, p.lat, p.r)] } } }));
+
+/* THE WIRE: one function turns a population feature into the link of the timelapse page (docs/URL_CONTRACT.md) */
+const TIMELAPSE_PAGE = '../index.html';   // same site; in Streamlit this becomes the full address of the hosted page
+const timelapseUrl = (feature, name) => TIMELAPSE_PAGE + '#geojson=' + encodeURIComponent(JSON.stringify(feature.geometry)) + '&name=' + encodeURIComponent(name);
+
+const map = L.map('map').setView([3.7, 114.3], 6);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors', maxZoom: 18 }).addTo(map);
+const layers = {};
+const sel = document.getElementById('pick'), openBtn = document.getElementById('open'), tb = document.querySelector('#tbl tbody');
+function choose(name) {
+  sel.value = name || '';
+  const p = POPS.find(x => x.name === name);
+  openBtn.setAttribute('aria-disabled', p ? 'false' : 'true');
+  if (p) openBtn.href = timelapseUrl(p.feature, p.name); else openBtn.removeAttribute('href');
+  for (const n in layers) layers[n].setStyle({ weight: n === name ? 4 : 2, fillOpacity: n === name ? 0.45 : 0.25 });
+  document.querySelectorAll('#tbl tr').forEach(tr => tr.classList.toggle('pick', tr.dataset.name === name));
+}
+for (const p of POPS) {
+  const l = layers[p.name] = L.geoJSON(p.feature, { style: { color: '#6a2cf0', weight: 2, fillOpacity: 0.25 } }).addTo(map);
+  const a = document.createElement('a'); a.className = 'btn'; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Open timelapse'; a.href = timelapseUrl(p.feature, p.name);
+  const box = document.createElement('div');
+  box.innerHTML = `<b>name</b> ${p.name}<br><b>Population_Density</b> NaN<br><b>nenc</b> ${p.nenc}<br><b>pop_size</b> ${p.pop_size}<br><b>effective_size</b> ${p.effective_size}<br>`; box.appendChild(a);
+  l.bindPopup(box); l.on('click', () => choose(p.name));
+  sel.add(new Option(p.name, p.name));
+  const tr = document.createElement('tr'); tr.dataset.name = p.name;
+  tr.innerHTML = `<td>${p.name}</td><td>None</td><td>${p.nenc}</td><td>None</td><td>None</td><td>${p.habitat_area}</td>`; tb.appendChild(tr);
+}
+sel.onchange = () => { choose(sel.value); if (sel.value) map.fitBounds(layers[sel.value].getBounds(), { maxZoom: 10 }); };
+</script>
+</body>
+</html>

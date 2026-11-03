@@ -156,17 +156,30 @@ function pixelMap(grid, epsg) {
 }
 
 /* ---------- STAC ---------- */
-async function stacSearch(grid, start, end) {
-  const body = { collections: [COLLECTION], bbox: [grid.w, grid.s, grid.e, grid.n], datetime: `${start}T00:00:00Z/${end}T23:59:59Z`, limit: 200 };
-  const out = []; let req = { url: STAC, body };
-  for (let page = 0; page < 10 && req; page++) {
-    const r = await fetch(req.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req.body) });
-    if (!r.ok) throw new Error('STAC search failed: HTTP ' + r.status);
-    const d = await r.json(); out.push(...d.features);
-    const nx = (d.links || []).find(l => l.rel === 'next');
-    req = nx ? { url: nx.href || STAC, body: nx.body || body } : null;
+async function stacPost(url, body) {
+  /* the API sometimes answers a burst with an error that carries no CORS header (the browser then reports "Failed to fetch"): retry with a pause */
+  let last;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (r.ok) return await r.json();
+      last = new Error('STAC search failed: HTTP ' + r.status);
+    } catch (err) { last = err; }
+    await new Promise(res => setTimeout(res, 800 * (attempt + 1) ** 2));
   }
-  return out;
+  throw last;
+}
+async function stacSearch(grid, start, end, fields) {
+  const body = { collections: [COLLECTION], bbox: [grid.w, grid.s, grid.e, grid.n], datetime: `${start}T00:00:00Z/${end}T23:59:59Z`, limit: 200 };
+  if (fields) body.fields = { include: fields };
+  const seen = new Map(); let req = { url: STAC, body };
+  for (let page = 0; page < 10 && req; page++) {
+    const d = await stacPost(req.url, req.body), before = seen.size;
+    for (const f of d.features) seen.set(f.id, f);
+    const nx = (d.links || []).find(l => l.rel === 'next');
+    req = nx && seen.size > before ? { url: nx.href || STAC, body: nx.body || body } : null;   // stop when a page brings nothing new
+  }
+  return [...seen.values()];
 }
 const pad = n => String(n).padStart(2, '0');
 const lastDay = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();   // m = 1..12
@@ -275,7 +288,7 @@ async function clearestQuarter(grid, y0, y1, say) {
   say('Tropics: finding the clearest three months from the scene catalogue');
   const sum = Array(12).fill(0), cnt = Array(12).fill(0);
   for (let y = y0; y <= y1; y++) {
-    const items = await stacSearch(grid, `${y}-01-01`, `${y}-12-31`);
+    const items = await stacSearch(grid, `${y}-01-01`, `${y}-12-31`, ['id', 'properties.datetime', 'properties.eo:cloud_cover']);
     for (const g of groupByDay(items)) { const m = +g.date.slice(5, 7) - 1; sum[m] += g.tileCloud; cnt[m]++; }
   }
   const mean = sum.map((s, i) => cnt[i] ? s / cnt[i] : 100);
@@ -340,7 +353,7 @@ async function run(cfg) {
   const tropic = Math.abs(g.lat0) < 23.5;
   if (cfg.auto) {
     if (tropic) {
-      const q = await clearestQuarter(g, y0, (cfg.y1 || now.getUTCFullYear()) , say); if (my !== state.run) return;
+      const q = await clearestQuarter(g, FIRST_YEAR, now.getUTCFullYear() - 1, say);   // always every full year, so the months do not depend on the years shown if (my !== state.run) return;
       from = q.from; to = q.to; cfg.note = `Tropics (latitude ${g.lat0.toFixed(1)}): no summer, so the three months with the lowest mean cloud cover in the catalogue, ${MONTHS[from - 1]} to ${MONTHS[to - 1]} (mean tile cloud ${q.meanCloud.toFixed(0)} %).`;
     } else if (g.lat0 > 0) { from = 6; to = 9; cfg.note = `Northern summer, June to September.`; }
     else { from = 12; to = 3; cfg.note = `Southern summer, December to March (a season is named after the year it ends in).`; }

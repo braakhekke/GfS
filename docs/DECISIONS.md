@@ -3,7 +3,7 @@
 Format: id, date, choice, why, alternatives, evidence, status (proposed / agreed / dropped).
 
 ## D-01 Repo location (2026-11-03, agreed by default)
-Local repo at `/Users/jbraak/GfS`, a sibling of nothing else: separate from `tonguesfromspace` on purpose. `git init` only; no GitHub remote yet (see Q-01).
+Local repo at `/Users/jbraak/GfS`, a sibling of nothing else: separate from `tonguesfromspace` on purpose. Remote: https://github.com/braakhekke/GfS (public, created by the owner 2026-11-03; remote `origin` added the same day).
 
 ## D-02 First deliverable: Sentinel-2 timelapse of the picked polygon (agreed by owner, 2026-11-03)
 The leader's request: pick a population on the Results page, then open it in an additional window for a closer look, "quick and dirty". Owner's answers: it must be a **timelapse** (no still, no Copernicus Browser link as a stop-gap); we provide an **external page** (not a change to the Streamlit app); the GitHub repo is **public, under the owner's current account** (`braakhekke`, from the tonguesfromspace remote; to be confirmed when created).
@@ -38,14 +38,24 @@ Stop-gap link to the Copernicus Browser: rejected by the owner (D-02).
 
 Known limits of the prototype: cloud shadow outside SCL's detection can remain; a polygon spanning two UTM zones is not handled (each scene is read in its own CRS, it works, but not tested); heavy polygons (> 100 km across) are read from coarse overviews and are slow; no download/export yet; tested only in headless Chromium, not Safari/Firefox/phone.
 
+## D-05 Results page mockup as the stand-in for the real page (owner, 2026-11-03)
+No access to the Streamlit source, so the wire is built on `mockup/results.html`, a hand-made imitation of https://www.gfstool.com/Results from screenshots 14 to 17 (Leaflet map, polygon popups with the real fields, effective-population-size table). **It holds no real data:** three polygons are invented shapes near the locations of the example run; only the `habitat_area` values (794.69, 763.8, 194.72) and the field names are copied from screenshot 15 / 17. A yellow banner on the page says so.
+The wire on the mockup: a drop-down "Look at one population closely" plus a button, and an "Open timelapse" button in each polygon's popup; both build `index.html#geojson=<polygon>&name=<name>` (the URL contract) and open it in a **new window**. One function, `timelapseUrl`, does it. Tested 2026-11-03 in headless Chromium: select pop_3, click, a new window opens, parses the polygon and starts scoring scenes.
+
+## D-06 Fixes found while testing the wire (2026-11-03)
+- **Search robustness:** the first wire test failed with "Failed to fetch" (CORS error in the console) on the tropics catalogue search. Earth Search answers some requests in a burst with an error that carries no CORS header; `stacPost` now retries up to 4 times with a growing pause. The cause was not established beyond that (curl bursts of 12 requests all returned 200), so it is a workaround, not a diagnosis.
+- **Paging:** a year can have more than 200 scenes over a polygon (2018 over Sabah: 243); the page follows the API's `next` links (max 10 pages), de-duplicates by scene id and stops when a page brings nothing new. The API's page tokens were seen to step backwards in date between pages; results were still complete by id.
+- **Tropics catalogue search** asks only for id, date and cloud cover (`fields`), to keep the answers small.
+- **Season no longer depends on the years shown:** the tropical clearest three months were first computed from the years on screen, so the same polygon gave Mar to May for 2019 to 2021 and Jul to Sep for 2022 to 2023. It now always uses every full year since 2017 (D-04.1 amended). Also seen: for the mock `pop_3`, 2022 and 2023 had no single clear scene and used composites of 10 and 9 days (0.1 % and 0.0 % of the polygon left without a clear pixel).
+
 ## Open questions (for the owner / project leader)
 
-- **Q-01** (answered: public, current account) GitHub repo not created yet: `gh` is not installed on this machine and no credentials are available to the agent. Owner to create `braakhekke/GfS` (public) or install and log in `gh`; then push.
+- **Q-01** (answered 2026-11-03: public repo `braakhekke/GfS`, created by the owner.)
 - **Q-02** (answered: timelapse.)
 - **Q-03** Licence of the GfS code (unknown) and who owns the tool's repository: do we change the Streamlit app itself (pull request to the GfS team) or only provide an external page they link to?
-- **Q-04** Where is the Results page code (Streamlit, Leaflet via streamlit-folium?) and can we see it? Needed to add "select a polygon, then open link".
+- **Q-04** (answered 2026-11-03: no access to the Streamlit code. Interim: a mockup of the Results page, D-05.) The real code is still needed to deliver the wire in the tool itself.
 - **Q-05** (answered: no.)
-- **Q-06** Tropical season rule (D-04.1): is "the three least cloudy months" acceptable, or does the leader prefer the species' dry season, or one fixed rule for all populations?
-- **Q-07** Is the 4-month summer window for the composite acceptable as the "quarterly mosaic", or should it be exactly one calendar quarter?
+- **Q-06** (answered 2026-11-03 by the owner: the tropics rule of D-04.1 is fine **for now**; revisit with the project leader, who may prefer the species' dry season or one fixed rule.)
+- **Q-07** (answered 2026-11-03 by the owner: the composite window of D-04.3 is fine **for now**; revisit with the project leader.)
 - **Q-08** Earth Search / AWS Open Data / Copernicus terms of use: read and quote them before the page is promoted (not yet read).
-- **Q-09** How does the Results page get the polygon into the link? Needs the Streamlit/folium code (Q-04); the URL format is in `docs/URL_CONTRACT.md`.
+- **Q-09** How does the real Results page get the polygon into the link? Needs the Streamlit code (Q-04). Proposed ways for the GfS team: `docs/INTEGRATION.md`.

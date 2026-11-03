@@ -49,6 +49,8 @@ The user-experience gap: the results map shows the polygons but there is no way 
 | Path | What |
 |---|---|
 | `CLAUDE.md` | this file: aim, constraints, rules |
+| `mockup/results.html` | mockup of the Results page with the wire (invented polygons, D-05) |
+| `docs/INTEGRATION.md` | proposal for wiring into the real tool |
 | `index.html` | the standalone timelapse page (all code in one file; libraries proj4 2.9.0 and geotiff 2.1.3 from CDNs) |
 | `docs/DECISIONS.md` | decision log and open questions |
 | `docs/URL_CONTRACT.md` | how to link to the page with a polygon |
@@ -58,8 +60,9 @@ The user-experience gap: the results map shows the polygons but there is no way 
 ## Status log
 
 - 2026-11-03: repo created, aim written down, feasibility of a worker-free Sentinel-2 timelapse checked (D-03).
-- 2026-11-03: prototype `index.html` built and tested in headless Chromium (Borneo bbox 2019 to 2021 and Alps bbox 2021 to 2023): scene choice, composite fallback, tropics season rule (D-04). Local commit only; GitHub repo not yet created (Q-01), not yet on GitHub Pages, terms of use not yet read (Q-08), polygon hand-over from Streamlit open (Q-09).
+- 2026-11-03: prototype `index.html` built and tested in headless Chromium (Borneo bbox 2019 to 2021 and Alps bbox 2021 to 2023): scene choice, composite fallback, tropics season rule (D-04). 
 
 ## How to run locally
 
 `python3 -m http.server 8123` in the repo root, then open `http://localhost:8123/index.html#bbox=118.05,5.75,118.25,5.95&name=Example`. There is no build step and no test suite yet; the checks so far were manual runs (see D-04).
+- 2026-11-03: owner created the public repo `braakhekke/GfS`; README, `.gitignore`, `docs/INTEGRATION.md` written. Owner accepted the tropics rule and the composite window for now (Q-06, Q-07). No Streamlit access: Results page mockup built and the wire tested (D-05); search retries, paging and a fixed tropics season found and fixed while testing (D-06). Not done: GitHub Pages, terms of use (Q-08), the wire in the real tool (Q-09), tests in Safari/Firefox/phones, export of the timelapse.
