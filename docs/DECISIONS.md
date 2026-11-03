@@ -76,6 +76,9 @@ The fixed first year 2017 was only based on Borneo. Checked on 2026-11-03 with t
 Now the page asks Earth Search for the earliest scene over the polygon (`earliestScene`, one request, saved in the browser for 30 days) and offers years from the **first year whose season ends after that date** (Alps June to September: 2017, because the 2016 season was over before November 2016; Svalbard: 2018; a southern season December to March counts as the year it ends in). The page says which date it found. The tropics season search uses the same first year. A polygon with no scene at all (e.g. open ocean: tested at 0 N 30 W) gets the message "Earth Search has no Sentinel-2 L2A scene over this polygon" and stops.
 Limits: "earliest scene" is not "complete coverage" (the first year can be sparse, e.g. Borneo 2017 had 37 scenes in the whole year); Earth Search's L2A archive before mid-2018 may be partly reprocessed data, not checked. Tested in headless Chromium for the Alps, Svalbard, Borneo, Patagonia and the ocean box (year dropdowns and notes); the full timelapse was not re-run for Svalbard or Patagonia.
 
+## D-11 Settings greyed out while loading (owner, 2026-11-03)
+The year and season boxes and "Rebuild" apply only to a finished run (changing them does nothing until Rebuild, and the year boxes are empty until Earth Search has been asked for the earliest scene). They are now disabled (greyed, tooltip "Available when loading has finished") from the start of a run until it ends, including when it ends with an error or "no scenes". Other controls keep working while loading: play, slider, speed, outline, the best-single-scene checkbox, the table buttons and the finished year chips. Tested: all five disabled during loading, enabled after.
+
 ## Open questions (for the owner / project leader)
 
 - **Q-01** (answered 2026-11-03: public repo `braakhekke/GfS`, created by the owner.)

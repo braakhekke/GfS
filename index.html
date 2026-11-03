@@ -23,7 +23,7 @@
   .bar { display:flex; gap:10px; align-items:center; margin:10px 0; flex-wrap:wrap; }
   button, select { font:inherit; padding:5px 10px; border:1px solid var(--line); border-radius:4px; background:#fff; color:var(--ink); cursor:pointer; }
   button:hover:not(:disabled) { border-color:var(--accent); }
-  button:disabled { opacity:.5; cursor:default; }
+  button:disabled, select:disabled { opacity:.5; cursor:not-allowed; background:#eef1f2; }
   input[type=range] { flex:1; min-width:160px; }
   .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; color:var(--muted); }
   .note { color:var(--muted); font-size:12.5px; margin:2px 0 6px; }
@@ -583,7 +583,14 @@ const guarded = fn => async () => { try { await fn(); } catch (err) { console.er
 
 /* ---------- run ---------- */
 const lastFullYear = (from, to) => { const now = new Date(), t = now.toISOString().slice(0, 10); let y = now.getUTCFullYear(); if (seasonWindow(y, from, to).end >= t) y -= 1; return y; };
+/* the year and season boxes and Rebuild only work on a finished run, so they are greyed out while it loads */
+const SETTINGS = ['yFrom', 'yTo', 'mFrom', 'mTo', 'rebuild'];
+function lockSettings(on) { for (const id of SETTINGS) { const e = $(id); e.disabled = on; e.title = on ? 'Available when loading has finished' : ''; } }
 async function run(cfg) {
+  lockSettings(true);
+  try { await runInner(cfg); } finally { lockSettings(false); }
+}
+async function runInner(cfg) {
   const my = ++state.run, alive = () => my === state.run;
   const say = (y, s, msg, tip) => {   // (year, state, short text, long text) or (text)
     if (!alive()) return;
