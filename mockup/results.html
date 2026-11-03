@@ -64,14 +64,16 @@ const blob = (lon, lat, r, n = 14) => { const ring = []; for (let i = 0; i < n; 
 const POPS = [
   { name: 'pop_1', lon: 110.45, lat: 1.55, r: 0.12, Population_Density: null, nenc: 0.1, pop_size: 0, effective_size: 0, habitat_area: 794.69 },
   { name: 'pop_2', lon: 110.80, lat: 1.50, r: 0.14, Population_Density: null, nenc: 0.1, pop_size: 0, effective_size: 0, habitat_area: 763.8 },
-  { name: 'pop_3', lon: 118.15, lat: 5.85, r: 0.16, Population_Density: null, nenc: 0.1, pop_size: 0, effective_size: 0, habitat_area: 194.72 }
+  { name: 'pop_3', lon: 118.15, lat: 5.85, r: 0.16, Population_Density: null, nenc: 0.1, pop_size: 0, effective_size: 0, habitat_area: 194.72 },
+  /* not a species population: a test polygon over the Aletsch region (Alps) so that the northern-summer path of the timelapse page can be tried from here */
+  { name: 'test_alps', test: true, lon: 8.05, lat: 46.5, r: 0.1, Population_Density: null, nenc: 0.1, pop_size: 0, effective_size: 0, habitat_area: null }
 ].map(p => ({ ...p, feature: { type: 'Feature', properties: { name: p.name }, geometry: { type: 'Polygon', coordinates: [blob(p.lon, p.lat, p.r)] } } }));
 
 /* THE WIRE: one function turns a population feature into the link of the timelapse page (docs/URL_CONTRACT.md) */
 const TIMELAPSE_PAGE = '../index.html';   // same site; in Streamlit this becomes the full address of the hosted page
 const timelapseUrl = (feature, name) => TIMELAPSE_PAGE + '#geojson=' + encodeURIComponent(JSON.stringify(feature.geometry)) + '&name=' + encodeURIComponent(name);
 
-const map = L.map('map').setView([3.7, 114.3], 6);
+const map = L.map('map');
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors', maxZoom: 18 }).addTo(map);
 const layers = {};
 const sel = document.getElementById('pick'), openBtn = document.getElementById('open'), tb = document.querySelector('#tbl tbody');
@@ -89,10 +91,12 @@ for (const p of POPS) {
   const box = document.createElement('div');
   box.innerHTML = `<b>name</b> ${p.name}<br><b>Population_Density</b> NaN<br><b>nenc</b> ${p.nenc}<br><b>pop_size</b> ${p.pop_size}<br><b>effective_size</b> ${p.effective_size}<br>`; box.appendChild(a);
   l.bindPopup(box); l.on('click', () => choose(p.name));
-  sel.add(new Option(p.name, p.name));
+  sel.add(new Option(p.test ? p.name + ' (test polygon in the Alps, not a population)' : p.name, p.name));
+  if (p.test) continue;
   const tr = document.createElement('tr'); tr.dataset.name = p.name;
   tr.innerHTML = `<td>${p.name}</td><td>None</td><td>${p.nenc}</td><td>None</td><td>None</td><td>${p.habitat_area}</td>`; tb.appendChild(tr);
 }
+map.fitBounds(L.featureGroup(Object.values(layers)).getBounds());
 sel.onchange = () => { choose(sel.value); if (sel.value) map.fitBounds(layers[sel.value].getBounds(), { maxZoom: 10 }); };
 </script>
 </body>

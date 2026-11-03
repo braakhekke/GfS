@@ -11,7 +11,7 @@
   Method and decisions: docs/DECISIONS.md. Link format: docs/URL_CONTRACT.md.
 -->
 <style>
-  :root { --ink:#1b2b34; --muted:#5d6b73; --line:#d7dde0; --bg:#f6f8f8; --accent:#1f6f50; --warn:#a4561a; }
+  :root { --ink:#1b2b34; --muted:#5d6b73; --line:#d7dde0; --bg:#f6f8f8; --accent:#1f6f50; --warn:#a4561a; --todo:#d7dde0; --busy:#e3b341; --ok:#1f6f50; --cache:#3b7dd8; --none:#b5473a; }
   * { box-sizing:border-box; }
   body { margin:0; font:14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; color:var(--ink); background:var(--bg); }
   header { padding:12px 16px; background:#fff; border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; }
@@ -22,18 +22,36 @@
   canvas { display:block; max-width:100%; height:auto; max-height:70vh; width:auto; }
   .bar { display:flex; gap:10px; align-items:center; margin:10px 0; flex-wrap:wrap; }
   button, select { font:inherit; padding:5px 10px; border:1px solid var(--line); border-radius:4px; background:#fff; color:var(--ink); cursor:pointer; }
-  button:hover { border-color:var(--accent); }
+  button:hover:not(:disabled) { border-color:var(--accent); }
+  button:disabled { opacity:.5; cursor:default; }
   input[type=range] { flex:1; min-width:160px; }
   .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; color:var(--muted); }
-  #status { color:var(--muted); min-height:1.4em; margin:4px 0; }
-  #caption { margin:6px 0; }
+  .note { color:var(--muted); font-size:12.5px; margin:2px 0 6px; }
   .warn { color:var(--warn); }
+  /* loading display */
+  #loading { background:#fff; border:1px solid var(--line); border-radius:6px; padding:10px 12px; margin:8px 0; }
+  #loading.done { background:transparent; border-color:transparent; padding-left:0; }
+  #progress { height:8px; background:var(--todo); border-radius:4px; overflow:hidden; margin:6px 0; }
+  #progress > i { display:block; height:100%; width:0; background:var(--ok); transition:width .3s; }
+  #loading.done #progress { display:none; }
+  .spin { display:inline-block; width:12px; height:12px; border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:sp .8s linear infinite; vertical-align:-2px; margin-right:6px; }
+  #loading.done .spin { display:none; }
+  @keyframes sp { to { transform:rotate(360deg); } }
+  #chips { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+  .chip { min-width:58px; padding:3px 8px; border-radius:12px; border:1px solid var(--line); background:#fff; font-size:12px; text-align:center; cursor:default; }
+  .chip small { display:block; color:var(--muted); font-size:10.5px; line-height:1.2; }
+  .chip.search, .chip.score, .chip.composite { border-color:var(--busy); background:#fff8e1; }
+  .chip.done { border-color:var(--ok); background:#e8f4ee; cursor:pointer; }
+  .chip.cached { border-color:var(--cache); background:#e8f0fb; cursor:pointer; }
+  .chip.none, .chip.error { border-color:var(--none); background:#fbeceb; }
+  .chip.on { outline:2px solid var(--ink); }
   table { border-collapse:collapse; width:100%; margin-top:10px; font-size:12.5px; background:#fff; }
   th, td { border:1px solid var(--line); padding:4px 8px; text-align:left; }
   th { background:#eef2f2; }
   footer { margin-top:18px; color:var(--muted); font-size:12px; }
   code { background:#eef2f2; padding:1px 4px; border-radius:3px; }
   .help { background:#fff; border:1px solid var(--line); border-radius:6px; padding:12px 16px; }
+  a.linkbtn { color:var(--muted); cursor:pointer; text-decoration:underline; background:none; border:0; padding:0; font:inherit; }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/geotiff@2.1.3/dist-browser/geotiff.js"></script>
@@ -51,15 +69,20 @@
   </div>
   <div id="app" hidden>
     <div class="row">
-      <label>Season (months)
-        <select id="mFrom"></select> to <select id="mTo"></select>
-      </label>
-      <span id="seasonNote"></span>
+      <label>Years <select id="yFrom"></select> to <select id="yTo"></select></label>
+      <label>Season (months) <select id="mFrom"></select> to <select id="mTo"></select></label>
       <label><input type="checkbox" id="outline" checked> outline</label>
       <button id="rebuild">Rebuild</button>
     </div>
-    <div id="status">Starting…</div>
-    <div class="stage"><canvas id="cv" width="10" height="10"></canvas></div>
+    <div class="note" id="yearNote"></div>
+    <div class="note" id="seasonNote"></div>
+    <div id="loading">
+      <div><span class="spin"></span><b id="loadHead">Starting…</b></div>
+      <div id="progress"><i></i></div>
+      <div class="note" id="status"></div>
+      <div id="chips"></div>
+    </div>
+    <div class="stage" id="stage" hidden><canvas id="cv" width="10" height="10"></canvas></div>
     <div class="bar">
       <button id="play">Play</button>
       <input type="range" id="slider" min="0" max="0" value="0">
@@ -78,6 +101,8 @@
   <footer>
     Contains modified Copernicus Sentinel data (Sentinel-2 L2A), read from the public AWS Open Data copy via Earth Search (Element 84).
     Pictures are the true-colour product (TCI) as delivered, only cut to the polygon area; cloud masking uses the scene classification (SCL).
+    Finished years are saved in this browser only (not shared) so the same population opens faster next time
+    <span id="cacheInfo"></span> <button class="linkbtn" id="forget">forget saved pictures</button>.
     Prototype: <a href="https://github.com/braakhekke/GfS">repository and decisions</a>.
   </footer>
 </main>
@@ -86,12 +111,18 @@
 /* ---------- settings (every choice is explained in docs/DECISIONS.md) ---------- */
 const STAC = 'https://earth-search.aws.element84.com/v1/search';
 const COLLECTION = 'sentinel-2-l2a';
-const FIRST_YEAR = 2017;              // Earth Search L2A has nothing before 2017 over Borneo (checked 2026-11-03)
+const FIRST_YEAR = 2017;              // default first year; Earth Search L2A has nothing before 2017 over Borneo (checked 2026-11-03)
 const MAX_CLEAR = 0.02;               // a scene counts as clear when at most 2 % of the polygon is cloud, shadow, defective or no data (5 % still showed visible clouds in the Borneo test)
-const MAX_SCORE = 10;                 // most acquisition days scored per year (best by tile cloud cover first)
-const MAX_COMPOSITE = 12;             // most scenes used in a fallback composite
+const MAX_SCORE = 12;                 // most acquisition days scored per year (lowest tile cloud first, in batches; stops at the first batch with a clear day)
+const SCORE_BATCH = 4;
+const MAX_COMPOSITE = 8;              // most scenes used in a fallback composite
 const MAX_SIDE = 800;                 // longest side of a frame in pixels
 const MIN_PIXEL_M = 10;               // never finer than the Sentinel-2 pixel
+const SCORE_PIXEL_M = 60;             // scoring reads the cloud mask at this coarser size (scenes are only judged, not shown)
+const SCORE_SIDE = 300;
+const YEAR_JOBS = 3;                  // years built at the same time
+const CACHE_VERSION = 'v1';           // bump when scoring or rendering changes, so saved pictures are not reused
+const CACHE_TTL_MS = 30 * 864e5, CACHE_TTL_NONE_MS = 864e5, CACHE_MAX = 120;
 const BAD = new Set([0, 1, 3, 8, 9, 10]);   // SCL: no data, saturated/defective, cloud shadow, cloud medium/high, thin cirrus
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const $ = id => document.getElementById(id);
@@ -114,17 +145,18 @@ function parseHash() {
     const [w, s, e, n] = p.get('bbox').split(',').map(Number);
     if ([w, s, e, n].every(Number.isFinite)) rings = [[[[w, s], [e, s], [e, n], [w, n], [w, s]]]];
   }
-  return { rings, name: p.get('name') || '', y0: +p.get('y0') || FIRST_YEAR, y1: +p.get('y1') || 0, from: +p.get('from') || 0, to: +p.get('to') || 0 };
+  return { rings, name: p.get('name') || '', y0: +p.get('y0') || 0, y1: +p.get('y1') || 0, from: +p.get('from') || 0, to: +p.get('to') || 0 };
 }
 
 /* ---------- geometry ---------- */
-function setupGrid(rings) {
+let gridCounter = 0;
+function setupGrid(rings, minPixelM = MIN_PIXEL_M, maxSide = MAX_SIDE) {
   let w = 180, s = 90, e = -180, n = -90;
   for (const poly of rings) for (const ring of poly) for (const [x, y] of ring) { w = Math.min(w, x); e = Math.max(e, x); s = Math.min(s, y); n = Math.max(n, y); }
   const padX = Math.max((e - w) * 0.08, 0.0005), padY = Math.max((n - s) * 0.08, 0.0005);
   w -= padX; e += padX; s -= padY; n += padY;
   const lat0 = (s + n) / 2, mx = (e - w) * Math.cos(lat0 * Math.PI / 180) * 111320, my = (n - s) * 110574;
-  const pixelM = Math.max(MIN_PIXEL_M, Math.max(mx, my) / MAX_SIDE);
+  const pixelM = Math.max(minPixelM, Math.max(mx, my) / maxSide);
   const W = Math.max(2, Math.round(mx / pixelM)), H = Math.max(2, Math.round(my / pixelM));
   const inPoly = new Uint8Array(W * H);
   for (let r = 0; r < H; r++) { const lat = n - (r + 0.5) / H * (n - s);
@@ -133,7 +165,7 @@ function setupGrid(rings) {
       for (const poly of rings) { let k = pointIn(poly[0], lon, lat); if (k) for (let h = 1; h < poly.length; h++) if (pointIn(poly[h], lon, lat)) { k = false; break; } if (k) { inside = true; break; } }
       inPoly[r * W + c] = inside ? 1 : 0; } }
   let count = 0; for (let i = 0; i < inPoly.length; i++) count += inPoly[i];
-  return { w, s, e, n, W, H, pixelM, inPoly, count, lat0 };
+  return { id: ++gridCounter, w, s, e, n, W, H, pixelM, inPoly, count, lat0 };
 }
 function pointIn(ring, x, y) {
   let ins = false;
@@ -146,7 +178,8 @@ function pointIn(ring, x, y) {
 /* map every output pixel to the projected coordinates of a scene's CRS: exact at a coarse set of nodes, bilinear between them */
 const mapCache = new Map();
 function pixelMap(grid, epsg) {
-  if (mapCache.has(epsg)) return mapCache.get(epsg);
+  const key = grid.id + '/' + epsg;
+  if (mapCache.has(key)) return mapCache.get(key);
   const zone = epsg % 100, south = epsg >= 32700;
   const def = `+proj=utm +zone=${zone}${south ? ' +south' : ''} +datum=WGS84 +units=m +no_defs`;
   const fwd = proj4('EPSG:4326', def), { W, H, w, e, s, n } = grid, S = 16;
@@ -159,7 +192,7 @@ function pixelMap(grid, epsg) {
     for (let c = 0; c < W; c++) { const c0 = Math.floor(c / S), fc = (c - c0 * S) / S, a = r0 * nc + c0, b = a + 1, d = a + nc, f = d + 1;
       X[r * W + c] = (nx[a] * (1 - fc) + nx[b] * fc) * (1 - fr) + (nx[d] * (1 - fc) + nx[f] * fc) * fr;
       Y[r * W + c] = (ny[a] * (1 - fc) + ny[b] * fc) * (1 - fr) + (ny[d] * (1 - fc) + ny[f] * fc) * fr; } }
-  const m = { X, Y }; mapCache.set(epsg, m); return m;
+  const m = { X, Y }; mapCache.set(key, m); return m;
 }
 
 /* ---------- STAC ---------- */
@@ -232,14 +265,21 @@ async function readAsset(grid, item, key) {
   }
   return { data: out, got, ns };
 }
-/* one acquisition day: SCL, and the colour picture when wanted; tiles of the same day fill each other's gaps */
-async function loadDay(grid, day, wantRGB) {
-  if (!day.scl) {
-    const scl = new Uint8Array(grid.W * grid.H);
-    for (const it of day.items) { const a = await readAsset(grid, it, 'scl'); if (!a) continue; for (let p = 0; p < scl.length; p++) if (!scl[p] && a.got[p] && a.data[p]) scl[p] = a.data[p]; }
-    day.scl = scl; day.bad = badFraction(grid, scl);
-  }
-  if (wantRGB && !day.rgb) {
+/* the cloud mask of one acquisition day on a grid (tiles of the same day fill each other's gaps) */
+async function readSCL(grid, day) {
+  const scl = new Uint8Array(grid.W * grid.H);
+  for (const it of day.items) { const a = await readAsset(grid, it, 'scl'); if (!a) continue; for (let p = 0; p < scl.length; p++) if (!scl[p] && a.got[p] && a.data[p]) scl[p] = a.data[p]; }
+  return scl;
+}
+/* scoring: the coarse grid, cloud mask only (fast) */
+async function scoreDay(sg, day) {
+  if (day.bad == null) day.bad = badFraction(sg, await readSCL(sg, day));
+  return day;
+}
+/* composite input: the full grid, cloud mask and colour picture */
+async function loadDayFull(grid, day) {
+  if (!day.scl) day.scl = await readSCL(grid, day);
+  if (!day.rgb) {
     const rgb = new Uint8Array(grid.W * grid.H * 3), have = new Uint8Array(grid.W * grid.H);
     for (const it of day.items) { const a = await readAsset(grid, it, 'visual'); if (!a) continue;
       for (let p = 0; p < have.length; p++) if (!have[p] && a.got[p] && (a.data[p * 3] | a.data[p * 3 + 1] | a.data[p * 3 + 2])) { have[p] = 1; rgb[p * 3] = a.data[p * 3]; rgb[p * 3 + 1] = a.data[p * 3 + 1]; rgb[p * 3 + 2] = a.data[p * 3 + 2]; } }
@@ -251,39 +291,84 @@ function badFraction(grid, scl) {
   let bad = 0; for (let p = 0; p < scl.length; p++) if (grid.inPoly[p] && BAD.has(scl[p])) bad++;
   return grid.count ? bad / grid.count : 1;
 }
-async function pool(tasks, n, onDone) {
-  let i = 0, done = 0; const res = new Array(tasks.length);
-  await Promise.all(Array.from({ length: Math.min(n, tasks.length) }, async () => { while (i < tasks.length) { const k = i++; try { res[k] = await tasks[k](); } catch (err) { console.error('read failed:', err && err.message); res[k] = { error: err }; } onDone && onDone(++done, tasks.length); } }));
+async function pool(tasks, n) {
+  let i = 0; const res = new Array(tasks.length);
+  await Promise.all(Array.from({ length: Math.min(n, tasks.length) }, async () => { while (i < tasks.length) { const k = i++; try { res[k] = await tasks[k](); } catch (err) { console.error('read failed:', err && err.message); res[k] = { error: err }; } } }));
   return res;
 }
 
+/* ---------- saved pictures (this browser only) ---------- */
+const store = {
+  db: null,
+  open() {
+    if (!this.db) this.db = new Promise(res => {
+      try { const q = indexedDB.open('gfs-timelapse', 1); q.onupgradeneeded = () => q.result.createObjectStore('kv'); q.onsuccess = () => res(q.result); q.onerror = () => res(null); } catch { res(null); } });
+    return this.db;
+  },
+  async run(mode, fn) {
+    const db = await this.open(); if (!db) return undefined;
+    return new Promise(res => { try { const tx = db.transaction('kv', mode), st = tx.objectStore('kv'); let out; const rq = fn(st); if (rq) rq.onsuccess = () => { out = rq.result; }; tx.oncomplete = () => res(out); tx.onerror = tx.onabort = () => res(undefined); } catch { res(undefined); } });
+  },
+  async get(key) {
+    const v = await this.run('readonly', st => st.get(key));
+    if (!v) return null;
+    if (Date.now() - v.t > (v.kind === 'none' ? CACHE_TTL_NONE_MS : CACHE_TTL_MS)) return null;
+    return v;
+  },
+  async put(key, val) {
+    await this.run('readwrite', st => st.put({ ...val, t: Date.now() }, key));
+    const rows = await this.run('readonly', st => st.getAll()), keys = await this.run('readonly', st => st.getAllKeys());
+    if (rows && keys && rows.length > CACHE_MAX) {
+      const order = rows.map((r, i) => [r.t, keys[i]]).sort((a, b) => a[0] - b[0]).slice(0, rows.length - CACHE_MAX);
+      await this.run('readwrite', st => { order.forEach(([, k]) => st.delete(k)); });
+    }
+  },
+  async count() { return (await this.run('readonly', st => st.count())) || 0; },
+  async clear() { await this.run('readwrite', st => st.clear()); }
+};
+function polyKey(rings) {   // a short hash of the rounded polygon, so the same population gives the same key
+  let h = 2166136261; const s = JSON.stringify(rings, (k, v) => typeof v === 'number' ? +v.toFixed(4) : v);
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0).toString(36) + '-' + s.length;
+}
+
 /* ---------- one year ---------- */
-async function buildYear(grid, year, from, to, say) {
-  const win = seasonWindow(year, from, to);
-  say(`${year}: searching scenes ${win.start} to ${win.end}`);
+async function buildYear(ctx, year, from, to, say, alive) {
+  const { grid, sg } = ctx, win = seasonWindow(year, from, to);
+  say(year, 'search', 'searching scenes');
   const found = await stacSearch(grid, win.start, win.end);
+  if (!alive()) return null;
   const days = groupByDay(found).sort((a, b) => a.tileCloud - b.tileCloud);
   if (!days.length) return { year, kind: 'none', note: 'no Sentinel-2 L2A scene found in the season' };
-  const cand = days.slice(0, Math.max(MAX_SCORE, 0));
-  say(`${year}: scoring ${cand.length} of ${days.length} acquisition days by cloud in the polygon`);
-  await pool(cand.map(d => () => loadDay(grid, d, false)), 4);
-  const scored = cand.filter(d => d.scl).sort((a, b) => a.bad - b.bad || (a.date < b.date ? 1 : -1));
+  /* score in batches, lowest tile cloud first; stop as soon as one day is clear enough */
+  const cand = days.slice(0, MAX_SCORE); let scored = [];
+  for (let i = 0; i < cand.length && alive(); i += SCORE_BATCH) {
+    const batch = cand.slice(i, i + SCORE_BATCH);
+    say(year, 'score', `scoring ${Math.min(i + SCORE_BATCH, cand.length)}/${days.length}`);
+    await pool(batch.map(d => () => scoreDay(sg, d)), SCORE_BATCH);
+    scored = cand.filter(d => d.bad != null);
+    if (scored.some(d => d.bad <= MAX_CLEAR)) break;
+  }
+  if (!alive()) return null;
+  scored.sort((a, b) => a.bad - b.bad || (a.date < b.date ? 1 : -1));
   if (!scored.length) return { year, kind: 'none', note: 'scenes found but none could be read' };
   const best = scored[0];
   if (best.bad <= MAX_CLEAR) {
-    await loadDay(grid, best, true);
-    return { year, kind: 'scene', rgb: best.rgb, bad: best.bad, dates: [best.date], ids: best.items.map(i => i.id), mask: best.scl };
+    say(year, 'score', 'reading the picture');
+    await loadDayFull(grid, best);
+    return { year, kind: 'scene', rgb: best.rgb, bad: best.bad, dates: [best.date], ids: best.items.map(i => i.id) };
   }
   /* fallback: per-pixel median of the clear pixels of the best days of the season */
   const use = scored.filter(d => d.bad < 0.9).slice(0, MAX_COMPOSITE);
-  if (!use.length) return { year, kind: 'none', note: `cloudiest case: best day has ${(best.bad * 100).toFixed(0)} % cloud or no data in the polygon`, bad: best.bad };
-  say(`${year}: no clear scene (best ${(best.bad * 100).toFixed(0)} % cloud); building a composite of ${use.length} days`);
-  await pool(use.map(d => () => loadDay(grid, d, true)), 3);
+  if (!use.length) return { year, kind: 'none', note: `best day has ${(best.bad * 100).toFixed(0)} % cloud or no data in the polygon`, bad: best.bad };
+  say(year, 'composite', `${use.length}-day composite`, `no clear scene (best ${(best.bad * 100).toFixed(0)} % cloud), building a composite of ${use.length} days`);
+  await pool(use.map(d => () => loadDayFull(grid, d)), 3);
+  if (!alive()) return null;
   const { W, H } = grid, rgb = new Uint8Array(W * H * 3), left = new Uint8Array(W * H), vals = [[], [], []];
   let holes = 0;
   for (let p = 0; p < W * H; p++) {
     vals[0].length = vals[1].length = vals[2].length = 0;
-    for (const d of use) if (d.rgb && !BAD.has(d.scl[p])) for (let k = 0; k < 3; k++) vals[k].push(d.rgb[p * 3 + k]);
+    for (const d of use) if (d.rgb && d.scl && !BAD.has(d.scl[p])) for (let k = 0; k < 3; k++) vals[k].push(d.rgb[p * 3 + k]);
     if (vals[0].length) for (let k = 0; k < 3; k++) { const v = vals[k].sort((a, b) => a - b); rgb[p * 3 + k] = v[v.length >> 1]; }
     else { left[p] = 1; if (grid.inPoly[p]) holes++; }
   }
@@ -291,7 +376,9 @@ async function buildYear(grid, year, from, to, say) {
 }
 
 /* tropics: no summer. Pick the three months with the lowest mean tile cloud cover over all years (same months every year, so frames are comparable) */
-async function clearestQuarter(grid, y0, y1, say) {
+async function clearestQuarter(grid, rings, y0, y1, say) {
+  const key = `${CACHE_VERSION}|q|${polyKey(rings)}|${y0}-${y1}`, hit = await store.get(key);
+  if (hit) return hit.q;
   say('Tropics: finding the clearest three months from the scene catalogue');
   const sum = Array(12).fill(0), cnt = Array(12).fill(0);
   for (let y = y0; y <= y1; y++) {
@@ -301,11 +388,13 @@ async function clearestQuarter(grid, y0, y1, say) {
   const mean = sum.map((s, i) => cnt[i] ? s / cnt[i] : 100);
   let bestM = 0, bestV = 1e9;
   for (let m = 0; m < 12; m++) { const v = (mean[m] + mean[(m + 1) % 12] + mean[(m + 2) % 12]) / 3; if (v < bestV) { bestV = v; bestM = m; } }
-  return { from: bestM + 1, to: ((bestM + 2) % 12) + 1, meanCloud: bestV };
+  const q = { from: bestM + 1, to: ((bestM + 2) % 12) + 1, meanCloud: bestV };
+  await store.put(key, { kind: 'quarter', q });
+  return q;
 }
 
 /* ---------- view ---------- */
-const state = { frames: [], idx: 0, timer: null, grid: null, name: '', run: 0 };
+const state = { frames: [], idx: 0, timer: null, grid: null, name: '', run: 0, byYear: {}, years: [], stat: {} };
 /* one frame (picture, outline, year) on any 2D context of size g.W x g.H; used by the screen and by the exports */
 function paintFrame(ctx, f, g) {
   if (f.rgb) {
@@ -332,6 +421,7 @@ function draw() {
   paintFrame($('cv').getContext('2d'), f, state.grid);
   $('slider').value = state.idx;
   $('caption').innerHTML = captionFor(f);
+  renderChips();
 }
 function captionFor(f) {
   const pct = f.bad == null ? '' : (f.bad * 100).toFixed(1) + ' %';
@@ -339,19 +429,42 @@ function captionFor(f) {
   if (f.kind === 'composite') return `<span class="warn">${f.year}: no clear single scene. Cloud-free composite (per-pixel median) of ${f.n} days, ${f.dates[0]} to ${f.dates[f.dates.length - 1]}; ${pct} of the polygon has no clear pixel (dark grey).</span>`;
   return `<span class="warn">${f.year}: ${f.note}.</span>`;
 }
-function addRow(f) {
-  const tb = $('tbl').tBodies[0], tr = document.createElement('tr');
-  const src = f.kind === 'scene' ? 'single scene' : f.kind === 'composite' ? `composite of ${f.n} days` : 'none';
-  const cells = [f.year, src, f.dates ? (f.dates.length > 3 ? f.dates[0] + ' … ' + f.dates[f.dates.length - 1] : f.dates.join(', ')) : '', f.bad == null ? '' : (f.bad * 100).toFixed(1) + ' %', f.ids ? f.ids.slice(0, 3).join(', ') + (f.ids.length > 3 ? ' …' : '') : f.note || ''];
-  cells.forEach(t => { const td = document.createElement('td'); td.textContent = t; tr.appendChild(td); });
-  tb.appendChild(tr); $('tbl').hidden = false;
+function renderTable() {
+  const tb = $('tbl').tBodies[0]; tb.innerHTML = '';
+  for (const f of state.frames) {
+    const tr = document.createElement('tr');
+    const src = f.kind === 'scene' ? 'single scene' : f.kind === 'composite' ? `composite of ${f.n} days` : 'none';
+    const cells = [f.year, src + (f.fromCache ? ' (saved)' : ''), f.dates ? (f.dates.length > 3 ? f.dates[0] + ' … ' + f.dates[f.dates.length - 1] : f.dates.join(', ')) : '', f.bad == null ? '' : (f.bad * 100).toFixed(1) + ' %', f.ids ? f.ids.slice(0, 3).join(', ') + (f.ids.length > 3 ? ' …' : '') : f.note || ''];
+    cells.forEach(t => { const td = document.createElement('td'); td.textContent = t; tr.appendChild(td); });
+    tb.appendChild(tr);
+  }
+  $('tbl').hidden = !state.frames.length;
+}
+/* the loading display: progress bar, headline with the count, one chip per year */
+const STAT_TEXT = { pending: 'waiting', search: 'searching', score: 'scoring', composite: 'composite', done: 'ready', cached: 'saved', none: 'none', error: 'error' };
+function renderChips() {
+  const box = $('chips'); box.innerHTML = '';
+  const cur = state.frames[state.idx];
+  for (const y of state.years) {
+    const st = state.stat[y] || { s: 'pending' }, d = document.createElement('div');
+    d.className = 'chip ' + st.s + (cur && cur.year === y ? ' on' : '');
+    d.innerHTML = `${y}<small>${st.msg && ['search', 'score', 'composite'].includes(st.s) ? st.msg : STAT_TEXT[st.s]}</small>`;
+    d.title = st.tip || st.msg || '';
+    if (['done', 'cached'].includes(st.s)) d.onclick = () => { play(false); const i = state.frames.findIndex(f => f.year === y); if (i >= 0) { state.idx = i; draw(); } };
+    box.appendChild(d);
+  }
+  const n = state.years.length, ready = state.years.filter(y => ['done', 'cached', 'none', 'error'].includes((state.stat[y] || {}).s)).length;
+  const fromSaved = state.years.filter(y => (state.stat[y] || {}).s === 'cached').length;
+  $('progress').firstElementChild.style.width = (n ? ready / n * 100 : 0) + '%';
+  if (!state.running) return;
+  const busy = state.years.filter(y => ['search', 'score', 'composite'].includes((state.stat[y] || {}).s)).length;
+  $('loadHead').textContent = `Loading: ${ready} of ${n} years finished` + (busy ? `, ${busy} in progress` : '') + (fromSaved ? `, ${fromSaved} from saved pictures` : '');
 }
 function play(on) {
   clearInterval(state.timer); state.timer = null;
   $('play').textContent = on ? 'Pause' : 'Play';
   if (on && state.frames.length > 1) state.timer = setInterval(() => { state.idx = (state.idx + 1) % state.frames.length; draw(); }, +$('speed').value);
 }
-
 
 /* ---------- export: video, GIF, PNG ---------- */
 /* An export frame is the on-screen frame plus a credit band; years without a picture are left out. Speed follows the Speed menu. */
@@ -417,57 +530,92 @@ function exportPng() {
 const guarded = fn => async () => { try { await fn(); } catch (err) { console.error(err); setExporting(false, 'Export failed: ' + err.message); } };
 
 /* ---------- run ---------- */
+const lastFullYear = (from, to) => { const now = new Date(), t = now.toISOString().slice(0, 10); let y = now.getUTCFullYear(); if (seasonWindow(y, from, to).end >= t) y -= 1; return y; };
 async function run(cfg) {
-  const my = ++state.run, say = t => { if (my === state.run) $('status').textContent = t; };
-  play(false); state.frames = []; setExporting(true); $('tbl').tBodies[0].innerHTML = ''; $('tbl').hidden = true;
-  const g = state.grid = setupGrid(cfg.rings); state.rings = cfg.rings;
+  const my = ++state.run, alive = () => my === state.run;
+  const say = (y, s, msg, tip) => {   // (year, state, short text, long text) or (text)
+    if (!alive()) return;
+    if (msg === undefined) { $('status').textContent = y; return; }
+    state.stat[y] = { s, msg, tip }; renderChips(); };
+  play(false); $('stage').hidden = true; state.frames = []; state.byYear = {}; state.stat = {}; state.years = []; state.running = true; setExporting(true);
+  $('loading').classList.remove('done'); $('tbl').hidden = true; $('chips').innerHTML = ''; $('progress').firstElementChild.style.width = '0';
+  $('loadHead').textContent = 'Starting…'; $('status').textContent = '';
+  const g = state.grid = setupGrid(cfg.rings), sg = setupGrid(cfg.rings, SCORE_PIXEL_M, SCORE_SIDE); state.rings = cfg.rings;
   const cv = $('cv'); cv.width = g.W; cv.height = g.H;
-  const now = new Date(), y0 = Math.max(cfg.y0, FIRST_YEAR);
+  const pkey = polyKey(cfg.rings);
   let from = +$('mFrom').value, to = +$('mTo').value;
   const tropic = Math.abs(g.lat0) < 23.5;
   if (cfg.auto) {
     if (tropic) {
-      const q = await clearestQuarter(g, FIRST_YEAR, now.getUTCFullYear() - 1, say);   // always every full year, so the months do not depend on the years shown if (my !== state.run) return;
-      from = q.from; to = q.to; cfg.note = `Tropics (latitude ${g.lat0.toFixed(1)}): no summer, so the three months with the lowest mean cloud cover in the catalogue, ${MONTHS[from - 1]} to ${MONTHS[to - 1]} (mean tile cloud ${q.meanCloud.toFixed(0)} %).`;
-    } else if (g.lat0 > 0) { from = 6; to = 9; cfg.note = `Northern summer, June to September.`; }
-    else { from = 12; to = 3; cfg.note = `Southern summer, December to March (a season is named after the year it ends in).`; }
+      $('loadHead').textContent = 'Finding the clearest months…';
+      const q = await clearestQuarter(g, cfg.rings, FIRST_YEAR, new Date().getUTCFullYear() - 1, t => { if (alive()) $('status').textContent = t; }); if (!alive()) return;   // always every full year, so the months do not depend on the years shown
+      from = q.from; to = q.to; cfg.note = `Season: tropics (latitude ${g.lat0.toFixed(1)}) have no summer, so the three months with the lowest mean cloud cover in the catalogue are used: ${MONTHS[from - 1]} to ${MONTHS[to - 1]} (mean tile cloud ${q.meanCloud.toFixed(0)} %), the same months every year.`;
+    } else if (g.lat0 > 0) { from = 6; to = 9; cfg.note = 'Season: northern summer, June to September.'; }
+    else { from = 12; to = 3; cfg.note = 'Season: southern summer, December to March (a season is named after the year it ends in).'; }
     $('mFrom').value = from; $('mTo').value = to; cfg.auto = false;
-  } else cfg.note = 'Season set by hand.';
+  } else cfg.note = 'Season: set by hand.';
   $('seasonNote').textContent = cfg.note;
-  /* last year: the current year only once its season has ended */
-  let y1 = cfg.y1 || now.getUTCFullYear();
-  if (!cfg.y1 && seasonWindow(y1, from, to).end >= now.toISOString().slice(0, 10)) y1 -= 1;
-  const years = []; for (let y = y0; y <= y1; y++) years.push(y);
+  /* years: the selection on the page; the last year offered is the latest whose season has ended */
+  const lastY = lastFullYear(from, to);
+  fillYearSelects(lastY, cfg);
+  const years = []; for (let y = +$('yFrom').value; y <= +$('yTo').value; y++) years.push(y);
+  state.years = years; years.forEach(y => state.stat[y] = { s: 'pending' }); renderChips();
   $('slider').max = 0;
-  for (const y of years) {
+  const done = (f, saved) => {
+    if (!alive()) return;
+    state.byYear[f.year] = f; if (saved) f.fromCache = true;
+    state.stat[f.year] = { s: f.kind === 'none' ? 'none' : saved ? 'cached' : 'done', msg: f.note };
+    const keep = state.frames[state.idx];
+    state.frames = years.filter(y => state.byYear[y]).map(y => state.byYear[y]);
+    state.idx = f.rgb || !keep ? state.frames.indexOf(f) : Math.max(0, state.frames.indexOf(keep));
+    $('stage').hidden = false; $('slider').max = state.frames.length - 1; renderTable(); draw();
+  };
+  const ctx = { grid: g, sg }, t0 = performance.now();
+  await pool(years.map(y => async () => {
+    if (!alive()) return;
+    const key = `${CACHE_VERSION}|y|${pkey}|${from}-${to}|${y}`, hit = await store.get(key);
+    if (hit && alive()) { done(hit.f, true); return; }
     let f;
-    try { f = await buildYear(g, y, from, to, say); } catch (err) { f = { year: y, kind: 'none', note: 'error: ' + err.message }; console.error(err); }
-    if (my !== state.run) return;
-    state.frames.push(f); addRow(f);
-    $('slider').max = state.frames.length - 1; state.idx = state.frames.length - 1; draw();
-  }
-  const usable = state.frames.filter(f => f.rgb).length;
-  say(`Done: ${usable} of ${years.length} years have a picture.`); setExporting(false);
+    try { f = await buildYear(ctx, y, from, to, say, alive); } catch (err) { f = { year: y, kind: 'none', note: 'error: ' + err.message }; console.error(err); }
+    if (!f || !alive()) return;
+    done(f, false);
+    if (f.kind !== 'none' || !/^error/.test(f.note || '')) store.put(key, { kind: f.kind, f }).then(showCacheInfo);
+  }), YEAR_JOBS);
+  if (!alive()) return;
+  state.running = false;
+  const usable = state.frames.filter(f => f.rgb).length, secs = ((performance.now() - t0) / 1000).toFixed(0);
+  $('loading').classList.add('done'); $('loadHead').textContent = `Ready: ${usable} of ${years.length} years have a picture (${secs} s).`; $('status').textContent = '';
+  renderChips(); setExporting(false);
   state.idx = 0; draw(); if (usable > 1) play(true);
-  window.__done = true;
+  window.__done = true; window.__secs = +secs;
 }
+function fillYearSelects(lastY, cfg) {
+  const a = $('yFrom'), b = $('yTo'), keepA = a.value, keepB = b.value;
+  a.innerHTML = b.innerHTML = '';
+  for (let y = FIRST_YEAR; y <= lastY; y++) { a.add(new Option(y, y)); b.add(new Option(y, y)); }
+  a.value = String(Math.min(Math.max(+(keepA || cfg.y0 || FIRST_YEAR), FIRST_YEAR), lastY));
+  b.value = String(Math.min(Math.max(+(keepB || cfg.y1 || lastY), FIRST_YEAR), lastY));
+  $('yearNote').textContent = `Years: ${FIRST_YEAR} is the first year offered (Earth Search has no Sentinel-2 L2A before it over Borneo, the only place checked); the last is ${lastY}, the latest year whose season has ended. Change them above.`;
+}
+async function showCacheInfo() { const n = await store.count(); $('cacheInfo').textContent = n ? `(${n} saved)` : ''; }
 
 function init() {
   const cfg = parseHash();
   $('exampleLink').href = '#bbox=118.05,5.75,118.25,5.95&name=Example%20population';
   $('exampleLink').addEventListener('click', () => setTimeout(() => location.reload(), 0));
   if (!cfg.rings) { $('help').hidden = false; return; }
-  $('app').hidden = false; $('title').textContent = cfg.name;
+  $('app').hidden = false; $('title').textContent = cfg.name; state.name = cfg.name;
   for (const sel of [$('mFrom'), $('mTo')]) MONTHS.forEach((m, i) => sel.add(new Option(m, i + 1)));
   $('play').onclick = () => play(!state.timer);
   $('slider').oninput = e => { play(false); state.idx = +e.target.value; draw(); };
   $('speed').onchange = () => { if (state.timer) play(true); };
   $('outline').onchange = draw;
-  state.name = cfg.name;
   $('exGif').onclick = guarded(exportGif); $('exVideo').onclick = guarded(exportVideo); $('exPng').onclick = exportPng;
   $('rebuild').onclick = () => run({ ...cfg, auto: false });
+  $('forget').onclick = async () => { await store.clear(); showCacheInfo(); $('status').textContent = 'Saved pictures removed from this browser.'; };
+  showCacheInfo();
   if (cfg.from && cfg.to) { $('mFrom').value = cfg.from; $('mTo').value = cfg.to; }
-  run({ ...cfg, auto: !(cfg.from && cfg.to) }).catch(err => { $('status').textContent = 'Error: ' + err.message; console.error(err); });
+  run({ ...cfg, auto: !(cfg.from && cfg.to) }).catch(err => { $('loadHead').textContent = 'Error: ' + err.message; console.error(err); });
 }
 init();
 </script>
