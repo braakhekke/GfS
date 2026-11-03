@@ -11,50 +11,81 @@
   Method and decisions: docs/DECISIONS.md. Link format: docs/URL_CONTRACT.md.
 -->
 <style>
-  :root { --ink:#1b2b34; --muted:#5d6b73; --line:#d7dde0; --bg:#f6f8f8; --accent:#1f6f50; --warn:#a4561a; --todo:#d7dde0; --busy:#e3b341; --ok:#1f6f50; --cache:#3b7dd8; --none:#b5473a; }
+  :root { --ink:#1f2d33; --muted:#66757d; --line:#e1e7e9; --bg:#f4f6f7; --card:#fff; --accent:#1f6f50; --accent-soft:#e8f4ee; --warn:#a4561a;
+          --todo:#e1e7e9; --busy:#e3b341; --ok:#1f6f50; --cache:#3b7dd8; --none:#b5473a; --radius:10px; }
   * { box-sizing:border-box; }
-  body { margin:0; font:14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; color:var(--ink); background:var(--bg); }
-  header { padding:12px 16px; background:#fff; border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; }
-  h1 { font-size:16px; margin:0; }
-  header .sub { color:var(--muted); }
-  main { max-width:980px; margin:0 auto; padding:16px; }
-  .stage { position:relative; background:#0e1417; border-radius:6px; overflow:hidden; min-height:200px; display:flex; justify-content:center; }
-  canvas { display:block; max-width:100%; height:auto; max-height:70vh; width:auto; }
-  .bar { display:flex; gap:10px; align-items:center; margin:10px 0; flex-wrap:wrap; }
-  button, select { font:inherit; padding:5px 10px; border:1px solid var(--line); border-radius:4px; background:#fff; color:var(--ink); cursor:pointer; }
-  button:hover:not(:disabled) { border-color:var(--accent); }
-  button:disabled, select:disabled { opacity:.5; cursor:not-allowed; background:#eef1f2; }
-  input[type=range] { flex:1; min-width:160px; }
-  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; color:var(--muted); }
-  .note { color:var(--muted); font-size:12.5px; margin:2px 0 6px; }
+  body { margin:0; font:14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color:var(--ink); background:var(--bg); }
+  header { padding:14px 20px; background:var(--card); border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; }
+  h1 { font-size:16px; font-weight:600; margin:0; letter-spacing:.01em; }
+  header .sub { color:var(--muted); font-weight:500; }
+  main { max-width:1000px; margin:0 auto; padding:18px 16px 28px; display:flex; flex-direction:column; gap:12px; }
+  #app { display:flex; flex-direction:column; gap:12px; }
+  #app[hidden], [hidden] { display:none !important; }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:12px 16px; }
+  .settings { display:flex; gap:10px 22px; align-items:center; flex-wrap:wrap; }
+  .settings label, .player label { display:inline-flex; gap:6px; align-items:center; color:var(--muted); }
+  .settings .grow { flex:1; }
+  .note { color:var(--muted); font-size:12.5px; margin:0; }
+  .notes { display:flex; flex-direction:column; gap:2px; margin-top:8px; }
   .warn { color:var(--warn); }
-  /* loading display */
-  #loading { background:#fff; border:1px solid var(--line); border-radius:6px; padding:10px 12px; margin:8px 0; }
-  #loading.done { background:transparent; border-color:transparent; padding-left:0; }
-  #progress { height:8px; background:var(--todo); border-radius:4px; overflow:hidden; margin:6px 0; }
-  #progress > i { display:block; height:100%; width:0; background:var(--ok); transition:width .3s; }
+  /* controls */
+  button, select { font:inherit; color:var(--ink); }
+  select { padding:5px 26px 5px 9px; border:1px solid var(--line); border-radius:8px; background:#fff; cursor:pointer; }
+  button { padding:6px 14px; border:1px solid var(--line); border-radius:8px; background:#fff; cursor:pointer; transition:background .15s, border-color .15s; }
+  button:hover:not(:disabled) { background:var(--accent-soft); border-color:#b9d8c9; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; min-width:78px; }
+  button.primary:hover:not(:disabled) { background:#185a41; border-color:#185a41; }
+  button:disabled, select:disabled { opacity:.5; cursor:not-allowed; background:#eef1f2; }
+  input[type=range] { flex:1; min-width:160px; accent-color:var(--accent); }
+  input[type=checkbox] { accent-color:var(--accent); }
+  /* loading */
+  #loading { padding:12px 16px; }
+  #loading.done { background:transparent; border-color:transparent; padding:0 2px; }
+  #progress { height:6px; background:var(--todo); border-radius:3px; overflow:hidden; margin:8px 0 4px; }
+  #progress > i, #exProg > i { display:block; height:100%; width:0; background:var(--ok); transition:width .3s; border-radius:3px; }
   #loading.done #progress { display:none; }
-  .spin { display:inline-block; width:12px; height:12px; border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:sp .8s linear infinite; vertical-align:-2px; margin-right:6px; }
+  .spin { display:inline-block; width:12px; height:12px; border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:sp .8s linear infinite; vertical-align:-2px; margin-right:8px; }
   #loading.done .spin { display:none; }
   @keyframes sp { to { transform:rotate(360deg); } }
-  #chips { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
-  .chip { min-width:58px; padding:3px 8px; border-radius:12px; border:1px solid var(--line); background:#fff; font-size:12px; text-align:center; cursor:default; }
-  .chip small { display:block; color:var(--muted); font-size:10.5px; line-height:1.2; }
+  #chips { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+  .chip { min-width:60px; padding:3px 9px; border-radius:14px; border:1px solid var(--line); background:#fff; font-size:12px; text-align:center; cursor:default; }
+  .chip small { display:block; color:var(--muted); font-size:10.5px; line-height:1.25; }
   .chip.search, .chip.score, .chip.composite { border-color:var(--busy); background:#fff8e1; }
-  .chip.done { border-color:var(--ok); background:#e8f4ee; cursor:pointer; }
-  .chip.cached { border-color:var(--cache); background:#e8f0fb; cursor:pointer; }
-  .chip.none, .chip.error { border-color:var(--none); background:#fbeceb; }
-  .chip.on { outline:2px solid var(--ink); }
+  .chip.done { border-color:#b9d8c9; background:var(--accent-soft); cursor:pointer; }
+  .chip.cached { border-color:#b8cdee; background:#eaf1fc; cursor:pointer; }
+  .chip.none, .chip.error { border-color:#e3b5b0; background:#fbeceb; }
+  .chip.on { box-shadow:0 0 0 2px var(--ink); }
   .chip.hid { opacity:.45; text-decoration:line-through; }
-  tr.hid td { color:#98a3a9; background:#f3f5f5; }
-  td button { padding:2px 8px; font-size:12px; margin-right:4px; }
-  table { border-collapse:collapse; width:100%; margin-top:10px; font-size:12.5px; background:#fff; }
-  th, td { border:1px solid var(--line); padding:4px 8px; text-align:left; }
-  th { background:#eef2f2; }
-  footer { margin-top:18px; color:var(--muted); font-size:12px; }
+  /* viewer */
+  .stage { position:relative; background:#0e1417; border-radius:var(--radius); overflow:hidden; min-height:200px; display:flex; justify-content:center; box-shadow:0 1px 3px rgba(0,0,0,.12); }
+  canvas { display:block; max-width:100%; height:auto; max-height:70vh; width:auto; }
+  .player { display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+  #caption { min-height:1.5em; }
+  #exports { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  #exports .lbl { color:var(--muted); }
+  #exProgWrap { display:flex; gap:10px; align-items:center; flex:1; min-width:220px; }
+  #exProg { flex:1; height:6px; background:var(--todo); border-radius:3px; overflow:hidden; max-width:320px; }
+  #exNote { color:var(--muted); font-size:12.5px; }
+  /* scene table */
+  .tablewrap { overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; font-size:12.5px; }
+  th { text-align:left; font-weight:600; font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); padding:6px 10px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  td { padding:8px 10px; border-bottom:1px solid #eef1f2; vertical-align:middle; }
+  td:nth-child(-n+4) { white-space:nowrap; }
+  tr:last-child td { border-bottom:0; }
+  tbody tr:hover td { background:#fafbfb; }
+  tr.hid td { color:#98a3a9; }
+  td.acts { white-space:nowrap; text-align:right; }
+  .mini { display:inline-flex; align-items:center; gap:5px; padding:3px 9px 3px 7px; margin-left:4px; font-size:12px; color:var(--muted); background:#f3f6f6; border:1px solid transparent; border-radius:14px; }
+  .mini svg { width:13px; height:13px; stroke:currentColor; fill:none; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+  .mini:hover:not(:disabled) { color:var(--ink); background:var(--accent-soft); border-color:#b9d8c9; }
+  .mini.danger:hover:not(:disabled) { color:var(--none); background:#fbeceb; border-color:#e3b5b0; }
+  footer { color:var(--muted); font-size:12px; line-height:1.55; padding:0 2px; }
   code { background:#eef2f2; padding:1px 4px; border-radius:3px; }
-  .help { background:#fff; border:1px solid var(--line); border-radius:6px; padding:12px 16px; }
-  a.linkbtn { color:var(--muted); cursor:pointer; text-decoration:underline; background:none; border:0; padding:0; font:inherit; }
+  .help { background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:14px 18px; }
+  a { color:var(--accent); }
+  button.linkbtn { color:var(--muted); cursor:pointer; text-decoration:underline; background:none; border:0; padding:0; font:inherit; border-radius:0; }
+  button.linkbtn:hover:not(:disabled) { background:none; color:var(--ink); border:0; }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/geotiff@2.1.3/dist-browser/geotiff.js"></script>
@@ -71,36 +102,43 @@
     <p>Link format: <code>#geojson=&lt;URL-encoded GeoJSON&gt;</code> or <code>#bbox=west,south,east,north</code>, optional <code>&amp;name=pop_1&amp;y0=2017&amp;y1=2025</code>. See <code>docs/URL_CONTRACT.md</code>.</p>
   </div>
   <div id="app" hidden>
-    <div class="row">
-      <label>Years <select id="yFrom"></select> to <select id="yTo"></select></label>
-      <label>Season (months) <select id="mFrom"></select> to <select id="mTo"></select></label>
-      <label><input type="checkbox" id="outline" checked> outline</label>
-      <label title="For years without a clear scene, show the least cloudy single scene instead of the composite (clouds stay visible)"><input type="checkbox" id="preferSingle"> best single scene instead of composites</label>
-      <button id="rebuild">Rebuild</button>
+    <div class="panel">
+      <div class="settings">
+        <label>Years <select id="yFrom"></select> to <select id="yTo"></select></label>
+        <label>Season <select id="mFrom"></select> to <select id="mTo"></select></label>
+        <label><input type="checkbox" id="outline" checked> Outline</label>
+        <label title="For years without a clear scene, show the least cloudy single scene instead of the composite (clouds stay visible)"><input type="checkbox" id="preferSingle"> Best single scene, not composite</label>
+        <span class="grow"></span>
+        <button id="rebuild">Rebuild</button>
+      </div>
+      <div class="notes"><div class="note" id="yearNote"></div><div class="note" id="seasonNote"></div></div>
     </div>
-    <div class="note" id="yearNote"></div>
-    <div class="note" id="seasonNote"></div>
-    <div id="loading">
+    <div id="loading" class="panel">
       <div><span class="spin"></span><b id="loadHead">Starting…</b></div>
       <div id="progress"><i></i></div>
       <div class="note" id="status"></div>
       <div id="chips"></div>
     </div>
     <div class="stage" id="stage" hidden><canvas id="cv" width="10" height="10"></canvas></div>
-    <div class="bar">
-      <button id="play">Play</button>
-      <input type="range" id="slider" min="0" max="0" value="0">
-      <label>Speed <select id="speed"><option value="1500">slow</option><option value="900" selected>normal</option><option value="450">fast</option></select></label>
+    <div class="panel">
+      <div class="player">
+        <button id="play" class="primary">Play</button>
+        <input type="range" id="slider" min="0" max="0" value="0">
+        <label>Speed <select id="speed"><option value="1500">Slow</option><option value="900" selected>Normal</option><option value="450">Fast</option></select></label>
+      </div>
+      <div id="caption" style="margin-top:8px"></div>
     </div>
-    <div class="bar" id="exports">
-      <span class="row">Export:</span>
+    <div class="panel" id="exports">
+      <span class="lbl">Export</span>
       <button id="exVideo" disabled>Video</button>
       <button id="exGif" disabled>GIF</button>
       <button id="exPng" disabled>This frame (PNG)</button>
-      <span id="exNote" class="row"></span>
+      <div id="exProgWrap" hidden><div id="exProg"><i></i></div><span id="exNote"></span></div>
+      <span id="exDone" class="note"></span>
     </div>
-    <div id="caption"></div>
-    <table id="tbl" hidden><thead><tr><th>Year</th><th>Source</th><th>Date(s)</th><th>Cloud or no data in polygon</th><th>Scene(s)</th><th>In timelapse</th></tr></thead><tbody></tbody></table>
+    <div class="panel tablewrap">
+      <table id="tbl" hidden><thead><tr><th>Year</th><th>Source</th><th>Date(s)</th><th>Cloud / no data</th><th>Scene(s)</th><th></th></tr></thead><tbody></tbody></table>
+    </div>
   </div>
   <footer>
     Contains modified Copernicus Sentinel data (Sentinel-2 L2A), read from the public AWS Open Data copy via Earth Search (Element 84).
@@ -339,10 +377,12 @@ function polyKey(rings) {   // a short hash of the rounded polygon, so the same 
 async function buildYear(ctx, year, from, to, say, alive) {
   const { grid, sg } = ctx, win = seasonWindow(year, from, to);
   say(year, 'search', 'searching scenes');
-  const found = await stacSearch(grid, win.start, win.end);
+  const all = await stacSearch(grid, win.start, win.end);
   if (!alive()) return null;
+  /* some items only point to the original JP2 files on a requester-pays bucket (s3://sentinel-s2-l2a/...): a browser cannot read those, only the https COG copies */
+  const found = all.filter(it => ['scl', 'visual'].every(k => /^https:\/\//.test(((it.assets || {})[k] || {}).href || '')));
   const days = groupByDay(found).sort((a, b) => a.tileCloud - b.tileCloud);
-  if (!days.length) return { year, kind: 'none', note: 'no Sentinel-2 L2A scene found in the season' };
+  if (!days.length) return { year, kind: 'none', note: all.length ? `${all.length} scenes found, but none in a format the browser can read` : 'no Sentinel-2 L2A scene found in the season' };
   /* score in batches, lowest tile cloud first; stop as soon as one day is clear enough */
   const cand = days.slice(0, MAX_SCORE); let scored = [];
   for (let i = 0; i < cand.length && alive(); i += SCORE_BATCH) {
@@ -464,6 +504,16 @@ function captionFor(f) {
   if (f.kind === 'composite') return `<span class="warn">${f.year}: no clear single scene. Cloud-free composite (per-pixel median) of ${f.n} days, ${f.dates[0]} to ${f.dates[f.dates.length - 1]}; ${pct} of the polygon has no clear pixel (dark grey).</span>`;
   return `<span class="warn">${f.year}: ${f.note}.</span>`;
 }
+const ICON = {
+  trash: '<path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13"/>',
+  show: '<path d="M2 12s3.7-6.5 10-6.5S22 12 22 12s-3.7 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.8"/>',
+  image: '<rect x="3" y="4.5" width="18" height="15" rx="2"/><circle cx="8.5" cy="10" r="1.5"/><path d="M21 16l-5-5-8 8"/>',
+  layers: '<path d="M12 3.5l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/>'
+};
+function miniBtn(icon, label, title, danger, onclick) {
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'mini' + (danger ? ' danger' : ''); b.title = title;
+  b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg>${label}`; b.onclick = onclick; return b;
+}
 function renderTable() {
   const tb = $('tbl').tBodies[0]; tb.innerHTML = '';
   const raws = state.years.filter(y => state.byYear[y]).map(y => state.byYear[y]);
@@ -476,16 +526,13 @@ function renderTable() {
     const cloud = f.bad == null ? '' : single ? pct(f.single.bad) + ' cloud' : f.kind === 'composite' ? pct(f.bad) + ' no clear pixel' : pct(f.bad);
     const cells = [f.year, src + (f.fromCache ? ' (saved)' : ''), dates ? (dates.length > 3 ? dates[0] + ' … ' + dates[dates.length - 1] : dates.join(', ')) : '', cloud, ids ? ids.slice(0, 3).join(', ') + (ids.length > 3 ? ' …' : '') : f.note || ''];
     cells.forEach(t => { const td = document.createElement('td'); td.textContent = t; tr.appendChild(td); });
-    const td = document.createElement('td');
+    const td = document.createElement('td'); td.className = 'acts';
     if (f.rgb) {
-      const hb = document.createElement('button'); hb.textContent = hid ? 'Show' : 'Delete'; hb.title = hid ? 'Put this year back into the timelapse and exports' : 'Take this year out of the timelapse and exports (can be put back)';
-      hb.onclick = () => { hid ? state.hidden.delete(f.year) : state.hidden.add(f.year); viewChanged(f.year); };
-      td.appendChild(hb);
-      if (f.kind === 'composite' && f.single) {
-        const sb = document.createElement('button'); sb.textContent = single ? 'Show composite' : 'Best single scene'; sb.title = single ? 'Back to the cloud-free composite' : 'Show the least cloudy single scene of this year instead of the composite';
-        sb.onclick = () => { state.single[f.year] = !single; viewChanged(f.year); };
-        td.appendChild(sb);
-      }
+      td.appendChild(miniBtn(hid ? ICON.show : ICON.trash, hid ? 'Show' : 'Delete', hid ? 'Put this year back into the timelapse and exports' : 'Take this year out of the timelapse and exports (can be put back)', !hid,
+        () => { hid ? state.hidden.delete(f.year) : state.hidden.add(f.year); viewChanged(f.year); }));
+      if (f.kind === 'composite' && f.single)
+        td.appendChild(miniBtn(single ? ICON.layers : ICON.image, single ? 'Composite' : 'Best single scene', single ? 'Back to the cloud-free composite' : 'Show the least cloudy single scene of this year instead of the composite', false,
+          () => { state.single[f.year] = !single; viewChanged(f.year); }));
     }
     tr.appendChild(td); tb.appendChild(tr);
   }
@@ -536,21 +583,28 @@ function exportCanvas(f) {
 }
 function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10000); }
 const fileBase = () => 'gfs-' + (state.name || 'population').replace(/[^\w-]+/g, '_') + '-timelapse';
-function setExporting(on, note) { for (const id of ['exVideo', 'exGif', 'exPng']) $(id).disabled = on || !exportFrames().length; $('exNote').textContent = note || ''; }
+/* on + frac: an export is running (progress bar); on without frac: buttons off (loading); off: buttons on, the note is the result */
+function setExporting(on, note, frac) {
+  for (const id of ['exVideo', 'exGif', 'exPng']) $(id).disabled = on || !exportFrames().length;
+  const busy = on && frac !== undefined;
+  $('exProgWrap').hidden = !busy;
+  if (busy) { $('exProg').firstElementChild.style.width = Math.round(Math.min(1, frac) * 100) + '%'; $('exNote').textContent = note || ''; $('exDone').textContent = ''; }
+  else $('exDone').textContent = note || '';
+}
 
 async function exportGif() {
   const fr = exportFrames(), delay = +$('speed').value;
-  setExporting(true, 'Loading the GIF encoder…');
+  setExporting(true, 'Loading the GIF encoder…', 0);
   const { GIFEncoder, quantize, applyPalette } = await import('https://cdn.jsdelivr.net/npm/gifenc@1.0.3/dist/gifenc.esm.js');
   const gif = GIFEncoder();
   for (let i = 0; i < fr.length; i++) {
-    setExporting(true, `GIF: frame ${i + 1} of ${fr.length}`);
+    setExporting(true, `GIF: frame ${i + 1} of ${fr.length}`, 0.05 + 0.9 * i / fr.length);
     await new Promise(r => setTimeout(r));
     const c = exportCanvas(fr[i]), px = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
     const pal = quantize(px, 256);   // one palette per frame: satellite colours band badly with a shared palette
     gif.writeFrame(applyPalette(px, pal), c.width, c.height, { palette: pal, delay: i === fr.length - 1 ? delay * 2 : delay });
   }
-  gif.finish();
+  gif.finish(); setExporting(true, 'GIF: saving', 1);
   download(new Blob([gif.bytes()], { type: 'image/gif' }), fileBase() + '.gif');
   setExporting(false, 'GIF saved.');
 }
@@ -565,9 +619,13 @@ async function exportVideo() {
   const stopped = new Promise(r => rec.onstop = r);
   ctx.drawImage(first, 0, 0); rec.start();
   for (let i = 0; i < fr.length; i++) {
-    setExporting(true, `Video: recording year ${fr[i].year} (${i + 1} of ${fr.length}), in real time`);
+    const hold = i === fr.length - 1 ? delay * 2 : delay, t0 = performance.now();
     ctx.drawImage(exportCanvas(fr[i]), 0, 0);
-    await new Promise(r => setTimeout(r, i === fr.length - 1 ? delay * 2 : delay));
+    /* a video is recorded in real time: the bar advances with the clock inside each frame */
+    while (performance.now() - t0 < hold) {
+      setExporting(true, `Video: recording year ${fr[i].year} (${i + 1} of ${fr.length}), in real time`, (i + Math.min(1, (performance.now() - t0) / hold)) / fr.length);
+      await new Promise(r => setTimeout(r, 80));
+    }
   }
   rec.stop(); await stopped;
   const ext = type.startsWith('video/mp4') ? 'mp4' : 'webm';
@@ -576,7 +634,7 @@ async function exportVideo() {
 }
 function exportPng() {
   const f = state.frames[state.idx]; if (!f || !f.rgb) return;
-  $('exNote').textContent = '';
+  $('exDone').textContent = '';
   exportCanvas(f).toBlob(b => download(b, `${fileBase().replace('-timelapse', '')}-${f.year}.png`), 'image/png');
 }
 const guarded = fn => async () => { try { await fn(); } catch (err) { console.error(err); setExporting(false, 'Export failed: ' + err.message); } };

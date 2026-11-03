@@ -70,3 +70,4 @@ The user-experience gap: the results map shows the polygons but there is no way 
 - 2026-11-03: faster scoring (about 1.5 to 2 times, D-08), loading display with per-year chips and counter, per-browser saved pictures (IndexedDB), selectable years, Alps test polygon in the mockup. Raise `CACHE_VERSION` in `index.html` when scoring or rendering changes.
 - 2026-11-03: scene table can delete a year from the timelapse and switch a composite year to its best single scene (D-09); `CACHE_VERSION` is `v2`.
 - 2026-11-03: first year is looked up per polygon from Earth Search (D-10), no longer a constant.
+- 2026-11-03: mockup gets a Turkey polygon and centre markers; export progress bar; cleaner page styling; scenes with s3:// asset links are skipped (D-12).

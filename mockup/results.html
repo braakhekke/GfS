@@ -27,11 +27,12 @@
   .sel { display:flex; gap:12px; align-items:end; margin:14px 0; flex-wrap:wrap; }
   .sel label { display:block; font-size:12px; color:var(--muted); }
   select { font:inherit; padding:7px 10px; min-width:240px; border:1px solid var(--line); border-radius:6px; background:var(--side); }
-  a.btn { display:inline-block; font:inherit; padding:7px 14px; border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--ink); text-decoration:none; }
-  a.btn:hover { border-color:var(--accent); color:var(--accent); }
+  a.btn, button.btn { display:inline-block; font:inherit; padding:7px 14px; border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--ink); text-decoration:none; }
+  a.btn:hover, button.btn:hover { border-color:var(--accent); color:var(--accent); }
   a.btn[aria-disabled=true] { opacity:.45; pointer-events:none; }
   table { border-collapse:collapse; width:100%; font-size:13px; } th,td { border:1px solid var(--line); padding:4px 8px; text-align:left; } th { background:var(--side); }
   tr.pick td { background:#fff0f0; }
+  button.btn { cursor:pointer; }
   .leaflet-popup-content a.btn { margin-top:6px; }
   @media (max-width:760px) { nav { display:none; } }
 </style>
@@ -49,6 +50,7 @@
   <div class="sel">
     <div><label for="pick">Look at one population closely</label>
       <select id="pick"><option value="">Select a population</option></select></div>
+    <button class="btn" id="all" type="button">Show all populations</button>
     <a class="btn" id="open" target="_blank" rel="noopener" aria-disabled="true">Open Sentinel-2 timelapse (new window)</a>
   </div>
 
@@ -65,6 +67,8 @@ const POPS = [
   { name: 'pop_1', lon: 110.45, lat: 1.55, r: 0.12, Population_Density: null, nenc: 0.1, pop_size: 0, effective_size: 0, habitat_area: 794.69 },
   { name: 'pop_2', lon: 110.80, lat: 1.50, r: 0.14, Population_Density: null, nenc: 0.1, pop_size: 0, effective_size: 0, habitat_area: 763.8 },
   { name: 'pop_3', lon: 118.15, lat: 5.85, r: 0.16, Population_Density: null, nenc: 0.1, pop_size: 0, effective_size: 0, habitat_area: 194.72 },
+  /* an invented population in Turkey (Amanos mountains area): shape and values are made up, habitat_area is None because the tool's output for it does not exist */
+  { name: 'pop_4', lon: 36.25, lat: 37.0, r: 0.2, Population_Density: null, nenc: 0.1, pop_size: 0, effective_size: 0, habitat_area: null },
   /* not a species population: a test polygon over the Aletsch region (Alps) so that the northern-summer path of the timelapse page can be tried from here */
   { name: 'test_alps', test: true, lon: 8.05, lat: 46.5, r: 0.1, Population_Density: null, nenc: 0.1, pop_size: 0, effective_size: 0, habitat_area: null }
 ].map(p => ({ ...p, feature: { type: 'Feature', properties: { name: p.name }, geometry: { type: 'Polygon', coordinates: [blob(p.lon, p.lat, p.r)] } } }));
@@ -73,9 +77,9 @@ const POPS = [
 const TIMELAPSE_PAGE = '../index.html';   // same site; in Streamlit this becomes the full address of the hosted page
 const timelapseUrl = (feature, name) => TIMELAPSE_PAGE + '#geojson=' + encodeURIComponent(JSON.stringify(feature.geometry)) + '&name=' + encodeURIComponent(name);
 
-const map = L.map('map');
+const map = L.map('map').setView([20, 40], 2);   // placeholder view; showAll() frames the populations below
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors', maxZoom: 18 }).addTo(map);
-const layers = {};
+const layers = {}, markers = {};
 const sel = document.getElementById('pick'), openBtn = document.getElementById('open'), tb = document.querySelector('#tbl tbody');
 function choose(name) {
   sel.value = name || '';
@@ -87,6 +91,9 @@ function choose(name) {
 }
 for (const p of POPS) {
   const l = layers[p.name] = L.geoJSON(p.feature, { style: { color: '#6a2cf0', weight: 2, fillOpacity: 0.25 } }).addTo(map);
+  /* a polygon of 20 km is a speck on a world map: a marker at its centre keeps every population visible at any zoom; it is hidden once the polygons are large enough to see */
+  const mk = markers[p.name] = L.circleMarker([p.lat, p.lon], { radius: 7, color: '#fff', weight: 2, fillColor: '#6a2cf0', fillOpacity: 1 }).addTo(map).bindTooltip(p.name);
+  mk.on('click', () => { choose(p.name); map.fitBounds(l.getBounds(), { maxZoom: 10 }); });
   const a = document.createElement('a'); a.className = 'btn'; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Open timelapse'; a.href = timelapseUrl(p.feature, p.name);
   const box = document.createElement('div');
   box.innerHTML = `<b>name</b> ${p.name}<br><b>Population_Density</b> NaN<br><b>nenc</b> ${p.nenc}<br><b>pop_size</b> ${p.pop_size}<br><b>effective_size</b> ${p.effective_size}<br>`; box.appendChild(a);
@@ -94,9 +101,12 @@ for (const p of POPS) {
   sel.add(new Option(p.test ? p.name + ' (test polygon in the Alps, not a population)' : p.name, p.name));
   if (p.test) continue;
   const tr = document.createElement('tr'); tr.dataset.name = p.name;
-  tr.innerHTML = `<td>${p.name}</td><td>None</td><td>${p.nenc}</td><td>None</td><td>None</td><td>${p.habitat_area}</td>`; tb.appendChild(tr);
+  tr.innerHTML = `<td>${p.name}</td><td>None</td><td>${p.nenc}</td><td>None</td><td>None</td><td>${p.habitat_area == null ? 'None' : p.habitat_area}</td>`; tb.appendChild(tr);
 }
-map.fitBounds(L.featureGroup(Object.values(layers)).getBounds());
+const showAll = () => map.fitBounds(L.featureGroup(Object.values(layers)).getBounds(), { padding: [30, 30] });
+showAll(); document.getElementById('all').onclick = showAll;
+const syncMarkers = () => { const small = map.getZoom() < 9; for (const n in markers) { if (small) markers[n].addTo(map); else map.removeLayer(markers[n]); } };
+map.on('zoomend', syncMarkers); syncMarkers();
 sel.onchange = () => { choose(sel.value); if (sel.value) map.fitBounds(layers[sel.value].getBounds(), { maxZoom: 10 }); };
 </script>
 </body>
