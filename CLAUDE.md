@@ -72,3 +72,4 @@ The user-experience gap: the results map shows the polygons but there is no way 
 - 2026-11-03: first year is looked up per polygon from Earth Search (D-10), no longer a constant.
 - 2026-11-03: mockup gets a Turkey polygon and centre markers; export progress bar; cleaner page styling; scenes with s3:// asset links are skipped (D-12).
 - 2026-11-03: exports have a Quality menu; High re-reads the scenes at 10 m (D-13).
+- 2026-11-03: measured where load time goes and wrote the caching/free-polygon proposal (D-14, docs/CACHING_OPTIONS.md); nothing built.

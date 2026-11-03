@@ -95,6 +95,9 @@ Before, every export was the 800 px picture shown on screen (about 20 to 55 m pe
 - **Measured** on the Borneo box 16 km wide (Mar to May, 2024 and 2025, composites): screen picture 800 px = 24 m per pixel; High PNG 1927 × 1924 px, 10 m, took 18 s (including re-reading the scenes); "As shown" PNG 800 px, instant; High MP4 (1920 × 2056 px, 515 kB, 2 frames) took 33 s. A side-by-side crop showed visible new detail in the high version (roofs, shore lines, mud flats) that the 800 px picture smears.
 - **Not tested:** GIF at high quality (only through the size line), Safari/Firefox, phones, large polygons at the caps, playback of the MP4 in other players.
 
+## D-14 Caching for free polygons: proposal only (owner question, 2026-11-03)
+Measured where the time goes (3 years, empty cache): about 21 to 25 s wall time, 130 to 195 range requests and 52 to 93 MB downloaded per run, but only 7 catalogue requests (1.2 to 1.6 s each). The slow part is reading pixels and scoring days, not the catalogue search. Options, ranking and open points are in `docs/CACHING_OPTIONS.md`. Recommended next steps: cell-keyed browser cache and progressive (coarse-first) loading; then, if first-time speed matters, a static cloud index built by a GitHub Action; a shared writable picture cache only after the GfS team decides and the free-tier terms are read (Q-12). Nothing is built yet.
+
 ## Open questions (for the owner / project leader)
 
 - **Q-01** (answered 2026-11-03: public repo `braakhekke/GfS`, created by the owner.)
@@ -107,4 +110,5 @@ Before, every export was the 800 px picture shown on screen (about 20 to 55 m pe
 - **Q-08** Earth Search / AWS Open Data / Copernicus terms of use: read and quote them before the page is promoted (not yet read).
 - **Q-10** (answered by D-10, 2026-11-03: the first year is now looked up per polygon.)
 - **Q-11** Do you also want to exclude individual days inside a composite (not just whole years)? See D-09.
+- **Q-12** Which speed-up level does the team want (D-14): browser-only (B, C), a prebuilt static cloud index (D), or a shared picture cache (E/F) that needs a hosted store and credentials?
 - **Q-09** How does the real Results page get the polygon into the link? Needs the Streamlit code (Q-04). Proposed ways for the GfS team: `docs/INTEGRATION.md`.
