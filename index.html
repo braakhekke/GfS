@@ -65,6 +65,13 @@
       <input type="range" id="slider" min="0" max="0" value="0">
       <label>Speed <select id="speed"><option value="1500">slow</option><option value="900" selected>normal</option><option value="450">fast</option></select></label>
     </div>
+    <div class="bar" id="exports">
+      <span class="row">Export:</span>
+      <button id="exVideo" disabled>Video</button>
+      <button id="exGif" disabled>GIF</button>
+      <button id="exPng" disabled>This frame (PNG)</button>
+      <span id="exNote" class="row"></span>
+    </div>
     <div id="caption"></div>
     <table id="tbl" hidden><thead><tr><th>Year</th><th>Source</th><th>Date(s)</th><th>Cloud or no data in polygon</th><th>Scene(s)</th></tr></thead><tbody></tbody></table>
   </div>
@@ -299,10 +306,8 @@ async function clearestQuarter(grid, y0, y1, say) {
 
 /* ---------- view ---------- */
 const state = { frames: [], idx: 0, timer: null, grid: null, name: '', run: 0 };
-function draw() {
-  const f = state.frames[state.idx], cv = $('cv'), g = state.grid;
-  if (!f) return;
-  const ctx = cv.getContext('2d');
+/* one frame (picture, outline, year) on any 2D context of size g.W x g.H; used by the screen and by the exports */
+function paintFrame(ctx, f, g) {
   if (f.rgb) {
     const img = ctx.createImageData(g.W, g.H);
     for (let p = 0; p < g.W * g.H; p++) {
@@ -320,6 +325,11 @@ function draw() {
   const fs = Math.max(14, Math.round(g.W / 22));
   ctx.font = `600 ${fs}px sans-serif`; ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(0, 0, fs * 3.2, fs * 1.6);
   ctx.fillStyle = '#fff'; ctx.fillText(String(f.year), fs * 0.4, fs * 1.15);
+}
+function draw() {
+  const f = state.frames[state.idx];
+  if (!f) return;
+  paintFrame($('cv').getContext('2d'), f, state.grid);
   $('slider').value = state.idx;
   $('caption').innerHTML = captionFor(f);
 }
@@ -342,10 +352,74 @@ function play(on) {
   if (on && state.frames.length > 1) state.timer = setInterval(() => { state.idx = (state.idx + 1) % state.frames.length; draw(); }, +$('speed').value);
 }
 
+
+/* ---------- export: video, GIF, PNG ---------- */
+/* An export frame is the on-screen frame plus a credit band; years without a picture are left out. Speed follows the Speed menu. */
+const even = n => n + (n % 2);
+function exportFrames() { return state.frames.filter(f => f.rgb); }
+function exportCanvas(f) {
+  const g = state.grid, fs = Math.max(11, Math.round(g.W / 40)), band = Math.round(fs * 2.9), c = document.createElement('canvas');
+  c.width = even(g.W); c.height = even(g.H + band);
+  const ctx = c.getContext('2d'); ctx.fillStyle = '#0e1417'; ctx.fillRect(0, 0, c.width, c.height);
+  const t = document.createElement('canvas'); t.width = g.W; t.height = g.H; paintFrame(t.getContext('2d'), f, g);
+  ctx.drawImage(t, 0, 0);
+  ctx.fillStyle = '#e8eef0'; ctx.font = `${fs}px sans-serif`; ctx.textBaseline = 'top';
+  const what = f.kind === 'scene' ? `scene ${f.dates[0]}` : `composite of ${f.n} days, ${f.dates[0]} to ${f.dates[f.dates.length - 1]}`;
+  ctx.fillText(`${state.name ? state.name + ' · ' : ''}${f.year} · ${what}`, Math.round(fs * 0.5), g.H + Math.round(fs * 0.35));
+  ctx.fillStyle = '#9fb0b8'; ctx.fillText('Contains modified Copernicus Sentinel data · Sentinel-2 L2A', Math.round(fs * 0.5), g.H + Math.round(fs * 1.55));
+  return c;
+}
+function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10000); }
+const fileBase = () => 'gfs-' + (state.name || 'population').replace(/[^\w-]+/g, '_') + '-timelapse';
+function setExporting(on, note) { for (const id of ['exVideo', 'exGif', 'exPng']) $(id).disabled = on || !exportFrames().length; $('exNote').textContent = note || ''; }
+
+async function exportGif() {
+  const fr = exportFrames(), delay = +$('speed').value;
+  setExporting(true, 'Loading the GIF encoder…');
+  const { GIFEncoder, quantize, applyPalette } = await import('https://cdn.jsdelivr.net/npm/gifenc@1.0.3/dist/gifenc.esm.js');
+  const gif = GIFEncoder();
+  for (let i = 0; i < fr.length; i++) {
+    setExporting(true, `GIF: frame ${i + 1} of ${fr.length}`);
+    await new Promise(r => setTimeout(r));
+    const c = exportCanvas(fr[i]), px = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    const pal = quantize(px, 256);   // one palette per frame: satellite colours band badly with a shared palette
+    gif.writeFrame(applyPalette(px, pal), c.width, c.height, { palette: pal, delay: i === fr.length - 1 ? delay * 2 : delay });
+  }
+  gif.finish();
+  download(new Blob([gif.bytes()], { type: 'image/gif' }), fileBase() + '.gif');
+  setExporting(false, 'GIF saved.');
+}
+async function exportVideo() {
+  const fr = exportFrames(), delay = +$('speed').value;
+  if (typeof MediaRecorder === 'undefined') { setExporting(false, 'This browser cannot record video; use the GIF.'); return; }
+  const type = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find(t => MediaRecorder.isTypeSupported(t));
+  if (!type) { setExporting(false, 'This browser cannot record video; use the GIF.'); return; }
+  const first = exportCanvas(fr[0]), c = document.createElement('canvas'); c.width = first.width; c.height = first.height;
+  const ctx = c.getContext('2d'), rec = new MediaRecorder(c.captureStream(30), { mimeType: type, videoBitsPerSecond: 8e6 }), chunks = [];
+  rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+  const stopped = new Promise(r => rec.onstop = r);
+  ctx.drawImage(first, 0, 0); rec.start();
+  for (let i = 0; i < fr.length; i++) {
+    setExporting(true, `Video: recording year ${fr[i].year} (${i + 1} of ${fr.length}), in real time`);
+    ctx.drawImage(exportCanvas(fr[i]), 0, 0);
+    await new Promise(r => setTimeout(r, i === fr.length - 1 ? delay * 2 : delay));
+  }
+  rec.stop(); await stopped;
+  const ext = type.startsWith('video/mp4') ? 'mp4' : 'webm';
+  download(new Blob(chunks, { type }), fileBase() + '.' + ext);
+  setExporting(false, `Video saved (${ext}).`);
+}
+function exportPng() {
+  const f = state.frames[state.idx]; if (!f || !f.rgb) return;
+  $('exNote').textContent = '';
+  exportCanvas(f).toBlob(b => download(b, `${fileBase().replace('-timelapse', '')}-${f.year}.png`), 'image/png');
+}
+const guarded = fn => async () => { try { await fn(); } catch (err) { console.error(err); setExporting(false, 'Export failed: ' + err.message); } };
+
 /* ---------- run ---------- */
 async function run(cfg) {
   const my = ++state.run, say = t => { if (my === state.run) $('status').textContent = t; };
-  play(false); state.frames = []; $('tbl').tBodies[0].innerHTML = ''; $('tbl').hidden = true;
+  play(false); state.frames = []; setExporting(true); $('tbl').tBodies[0].innerHTML = ''; $('tbl').hidden = true;
   const g = state.grid = setupGrid(cfg.rings); state.rings = cfg.rings;
   const cv = $('cv'); cv.width = g.W; cv.height = g.H;
   const now = new Date(), y0 = Math.max(cfg.y0, FIRST_YEAR);
@@ -373,7 +447,7 @@ async function run(cfg) {
     $('slider').max = state.frames.length - 1; state.idx = state.frames.length - 1; draw();
   }
   const usable = state.frames.filter(f => f.rgb).length;
-  say(`Done: ${usable} of ${years.length} years have a picture.`);
+  say(`Done: ${usable} of ${years.length} years have a picture.`); setExporting(false);
   state.idx = 0; draw(); if (usable > 1) play(true);
   window.__done = true;
 }
@@ -389,6 +463,8 @@ function init() {
   $('slider').oninput = e => { play(false); state.idx = +e.target.value; draw(); };
   $('speed').onchange = () => { if (state.timer) play(true); };
   $('outline').onchange = draw;
+  state.name = cfg.name;
+  $('exGif').onclick = guarded(exportGif); $('exVideo').onclick = guarded(exportVideo); $('exPng').onclick = exportPng;
   $('rebuild').onclick = () => run({ ...cfg, auto: false });
   if (cfg.from && cfg.to) { $('mFrom').value = cfg.from; $('mTo').value = cfg.to; }
   run({ ...cfg, auto: !(cfg.from && cfg.to) }).catch(err => { $('status').textContent = 'Error: ' + err.message; console.error(err); });

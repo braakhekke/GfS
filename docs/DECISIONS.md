@@ -48,6 +48,13 @@ The wire on the mockup: a drop-down "Look at one population closely" plus a butt
 - **Tropics catalogue search** asks only for id, date and cloud cover (`fields`), to keep the answers small.
 - **Season no longer depends on the years shown:** the tropical clearest three months were first computed from the years on screen, so the same polygon gave Mar to May for 2019 to 2021 and Jul to Sep for 2022 to 2023. It now always uses every full year since 2017 (D-04.1 amended). Also seen: for the mock `pop_3`, 2022 and 2023 had no single clear scene and used composites of 10 and 9 days (0.1 % and 0.0 % of the polygon left without a clear pixel).
 
+## D-07 GitHub Pages and export (2026-11-03, owner: "switch on", "build export option, video or gif")
+- **Hosting:** GitHub Pages switched on for `main`, folder `/` (legacy "deploy from branch" build, done through the GitHub API with the owner's stored git credential at the owner's request). Addresses: https://braakhekke.github.io/GfS/ (timelapse page) and https://braakhekke.github.io/GfS/mockup/results.html (mockup). The mockup links to `../index.html`, so the wire works on the hosted site too.
+- **Export** (buttons under the player, enabled when all years are done): **Video**, **GIF**, **This frame (PNG)**. Years without a picture are left out. Every export frame is the screen frame plus a band with name, year, scene date or composite description and the credit "Contains modified Copernicus Sentinel data · Sentinel-2 L2A". Frame time follows the Speed menu; the last frame is held twice as long.
+- **Video:** recorded in the browser with `MediaRecorder` from a canvas, **in real time** (a 10-year film takes about 10 s to record). MP4 when the browser supports it (Chromium 2026 gave `video/mp4`), else WebM; a browser without `MediaRecorder` is told to use the GIF.
+- **GIF:** `gifenc` 1.0.3 loaded from jsdelivr when first used, one 256-colour palette per frame (a shared palette bands badly on satellite colours). Files are large (1.2 MB for 3 frames at about 700 x 850 px).
+- **Tested** 2026-11-03 in headless Chromium on the Alps polygon (3 years): GIF with 3 frames (`GIF89a`), MP4 372 kB, PNG with the credit band. **Not tested:** Safari, Firefox, phones; playing the MP4 in QuickTime / social apps (no `ffprobe` on this machine to inspect it).
+
 ## Open questions (for the owner / project leader)
 
 - **Q-01** (answered 2026-11-03: public repo `braakhekke/GfS`, created by the owner.)

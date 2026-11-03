@@ -2,7 +2,7 @@
 
 An external page for the [Genes from Space tool](https://www.gfstool.com/) (project: [UZH](https://www.geo.uzh.ch/en/units/sg/news/genes-from-space.html), [genesfromspace.com](https://www.genesfromspace.com/)). It takes one population polygon and plays a Sentinel-2 timelapse of it: one cloud-free image per year, summer first, with a composite when no single scene is clear. It runs entirely in the browser: no server, no key, no paid service.
 
-**Status: prototype.** Not yet hosted, not yet connected to the real Results page.
+**Status: prototype.** Hosted on GitHub Pages: https://braakhekke.github.io/GfS/ (mockup: https://braakhekke.github.io/GfS/mockup/results.html). Not yet connected to the real Results page. Export as video, GIF or PNG is built in.
 
 ## Try it locally
 
