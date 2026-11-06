@@ -41,7 +41,7 @@
   /* loading */
   #loading { padding:12px 16px; }
   #loading.done { background:transparent; border-color:transparent; padding:0 2px; }
-  #progress { height:6px; background:var(--todo); border-radius:3px; overflow:hidden; margin:8px 0 4px; }
+  #progress { height:3px; background:var(--todo); border-radius:2px; overflow:hidden; margin:6px 0 4px; }
   #progress > i, #exProg > i { display:block; height:100%; width:0; background:var(--ok); transition:width .3s; border-radius:3px; }
   #loading.done #progress { display:none; }
   .spin { display:inline-block; width:12px; height:12px; border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:sp .8s linear infinite; vertical-align:-2px; margin-right:8px; }
@@ -57,10 +57,32 @@
   .chip.on { box-shadow:0 0 0 2px var(--ink); }
   .chip.hid { opacity:.45; text-decoration:line-through; }
   /* viewer */
-  .stage { position:relative; background:#0e1417; border-radius:var(--radius); overflow:hidden; min-height:200px; display:flex; justify-content:center; box-shadow:0 1px 3px rgba(0,0,0,.12); }
-  canvas { display:block; max-width:100%; height:auto; max-height:70vh; width:auto; }
-  .player { display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+  .stage { position:relative; background:#0e1417; border-radius:var(--radius); overflow:hidden; padding:6px; display:flex; justify-content:center; gap:6px; box-shadow:0 1px 3px rgba(0,0,0,.12); }
+  .stage.stack { flex-direction:column; align-items:center; }
+  .vp { position:relative; margin:0; overflow:hidden; border-radius:6px; }
+  .vp canvas { display:block; width:100%; height:100%; touch-action:none; cursor:grab; }
+  .vp canvas.dragging { cursor:grabbing; }
+  .stage[data-tool=line] canvas, .stage[data-tool=poly] canvas { cursor:crosshair; }
+  .stage[data-tool=erase] canvas { cursor:pointer; }
+  .vp .tag { position:absolute; top:8px; right:8px; font-size:11.5px; font-weight:600; letter-spacing:.02em; color:#fff; background:rgba(0,0,0,.55); padding:2px 9px; border-radius:10px; pointer-events:none; }
+  /* control bar under the viewers: time, measuring, zoom, view */
+  .bar { display:flex; gap:10px 14px; align-items:center; flex-wrap:wrap; }
+  .bar .time { display:flex; gap:10px; align-items:center; flex:0 1 380px; min-width:240px; }
+  .bar .time input[type=range] { min-width:90px; }
+  .bar .lbl { display:inline-flex; gap:6px; align-items:center; color:var(--muted); }
+  .bar button.primary, .bar select { height:32px; }
+  .bar .push { margin-left:auto; }
+  .seg { display:inline-flex; height:32px; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:#fff; }
+  .seg button { border:0; border-radius:0; height:100%; padding:0 10px; display:inline-flex; gap:6px; align-items:center; color:var(--muted); font-size:13px; }
+  .seg button + button { border-left:1px solid var(--line); }
+  .seg button:hover:not(:disabled) { border-color:var(--line); color:var(--ink); }
+  .seg button.on { background:var(--accent-soft); color:var(--accent); font-weight:600; }
+  .seg button:disabled { background:#fff; }
+  .seg svg { width:15px; height:15px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+  .info { display:flex; gap:4px 16px; justify-content:space-between; align-items:baseline; flex-wrap:wrap; margin-top:10px; }
   #caption { min-height:1.5em; }
+  #readout { font-variant-numeric:tabular-nums; text-align:right; }
+  @media (max-width:640px) { #readout { text-align:left; } .bar .push { margin-left:0; } }
   #exports { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   #exports .lbl { color:var(--muted); }
   #exports .ql { margin-left:auto; display:inline-flex; gap:6px; align-items:center; color:var(--muted); }
@@ -120,14 +142,34 @@
       <div class="note" id="status"></div>
       <div id="chips"></div>
     </div>
-    <div class="stage" id="stage" hidden><canvas id="cv" width="10" height="10"></canvas></div>
+    <div class="stage" id="stage" hidden>
+      <figure class="vp" id="vp-rgb"><canvas></canvas><figcaption class="tag">True colour</figcaption></figure>
+      <figure class="vp" id="vp-nir"><canvas></canvas><figcaption class="tag" title="Near infrared (B08) as red, red as green, green as blue: healthy vegetation shows bright red">NIR false colour</figcaption></figure>
+    </div>
     <div class="panel">
-      <div class="player">
-        <button id="play" class="primary">Play</button>
-        <input type="range" id="slider" min="0" max="0" value="0">
-        <label>Speed <select id="speed"><option value="1500">Slow</option><option value="900" selected>Normal</option><option value="450">Fast</option></select></label>
+      <div class="bar">
+        <div class="time">
+          <button id="play" class="primary">Play</button>
+          <input type="range" id="slider" min="0" max="0" value="0" aria-label="Year">
+          <label class="lbl">Speed <select id="speed"><option value="1500">Slow</option><option value="900" selected>Normal</option><option value="450">Fast</option></select></label>
+        </div>
+        <div class="seg" role="group" aria-label="Measure">
+          <button type="button" data-tool="line" title="Measure a distance: click points, double-click or Enter to finish"><svg viewBox="0 0 24 24"><path d="M5 19L19 5"/><circle cx="5" cy="19" r="1.8"/><circle cx="19" cy="5" r="1.8"/></svg>Line</button>
+          <button type="button" data-tool="poly" title="Measure an area: click corners, double-click, Enter or click the first corner to finish"><svg viewBox="0 0 24 24"><path d="M5 8l8-4 7 7-4 9-11-3z"/></svg>Area</button>
+          <button type="button" data-tool="erase" title="Remove a measurement: click on it"><svg viewBox="0 0 24 24"><path d="M8 20h12"/><path d="M14.5 4l5.5 5.5-9.5 9.5H7l-3-3z"/><path d="M9.5 8.5l6 6"/></svg>Erase</button>
+        </div>
+        <div class="seg" role="group" aria-label="Zoom">
+          <button type="button" id="zoomOut" title="Zoom out"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6M7.5 10.5h6"/></svg></button>
+          <button type="button" id="zoomIn" title="Zoom in (or scroll / double-click on the picture)"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6M7.5 10.5h6M10.5 7.5v6"/></svg></button>
+          <button type="button" id="zoomFit" title="Show the whole polygon"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>Fit</button>
+        </div>
+        <div class="seg push" role="group" aria-label="View" id="modes">
+          <button type="button" data-mode="rgb" title="True colour only">RGB</button>
+          <button type="button" data-mode="both" title="True colour and NIR false colour side by side">Both</button>
+          <button type="button" data-mode="nir" title="NIR false colour only (near infrared, red, green)">NIR</button>
+        </div>
       </div>
-      <div id="caption" style="margin-top:8px"></div>
+      <div class="info"><div id="caption"></div><div id="readout" class="note"></div></div>
     </div>
     <div class="panel" id="exports">
       <span class="lbl">Export</span>
@@ -145,7 +187,8 @@
   </div>
   <footer>
     Contains modified Copernicus Sentinel data (Sentinel-2 L2A), read from the public AWS Open Data copy via Earth Search (Element 84).
-    Pictures are the true-colour product (TCI) as delivered, only cut to the polygon area; cloud masking uses the scene classification (SCL).
+    Pictures are the true-colour product (TCI) as delivered, only cut to the polygon area; the NIR view puts the near-infrared band (B08, reflectance 0 to 0.5) in red and the TCI red and green in green and blue. Cloud masking uses the scene classification (SCL).
+    Measurements are great-circle distances and areas on the WGS84 sphere, as precise as the 10 m (or coarser) pixels shown.
     Finished years are saved in this browser only (not shared) so the same population opens faster next time
     <span id="cacheInfo"></span> <button class="linkbtn" id="forget">forget saved pictures</button>.
     Prototype: <a href="https://github.com/braakhekke/GfS">repository and decisions</a>.
@@ -165,7 +208,8 @@ const MIN_PIXEL_M = 10;               // never finer than the Sentinel-2 pixel
 const SCORE_PIXEL_M = 60;             // scoring reads the cloud mask at this coarser size (scenes are only judged, not shown)
 const SCORE_SIDE = 300;
 const YEAR_JOBS = 3;                  // years built at the same time
-const CACHE_VERSION = 'v2';           // bump when scoring or rendering changes, so saved pictures are not reused
+const CACHE_VERSION = 'v3';           // bump when scoring or rendering changes, so saved pictures are not reused (v3: frames carry the NIR band)
+const NIR_MAX_REFL = 0.5;             // NIR view: reflectance 0..0.5 is stretched to 0..255 (vegetation is about 0.25 to 0.45)
 const CACHE_TTL_MS = 30 * 864e5, CACHE_TTL_NONE_MS = 864e5, CACHE_MAX = 120;
 const BAD = new Set([0, 1, 3, 8, 9, 10]);   // SCL: no data, saturated/defective, cloud shadow, cloud medium/high, thin cirrus
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -301,7 +345,7 @@ async function readAsset(grid, item, key) {
   const x0 = Math.max(0, Math.floor(c0) - 1), x1 = Math.min(IW, Math.ceil(c1) + 2), y0 = Math.max(0, Math.floor(r0) - 1), y1 = Math.min(IH, Math.ceil(r1) + 2);
   if (x1 <= x0 || y1 <= y0) return null;
   const ras = await im.readRasters({ window: [x0, y0, x1, y1], interleave: true }), ww = x1 - x0, ns = ras.length / (ww * (y1 - y0));
-  const { W, H } = grid, out = new Uint8Array(W * H * ns), got = new Uint8Array(W * H);
+  const { W, H } = grid, out = new ras.constructor(W * H * ns), got = new Uint8Array(W * H);   // same type as the file: 8 bit for TCI/SCL, 16 bit for the NIR band
   for (let p = 0; p < W * H; p++) {
     const c = Math.floor((map.X[p] - ox) / rx) - x0, r = Math.floor((map.Y[p] - oy) / ry) - y0;
     if (c < 0 || r < 0 || c >= ww || r >= y1 - y0) continue;
@@ -321,15 +365,27 @@ async function scoreDay(sg, day) {
   return day;
 }
 /* composite input: the full grid, cloud mask and colour picture */
-async function loadDayFull(grid, day, needScl = true) {
-  if (needScl && !day.scl) day.scl = await readSCL(grid, day);
-  if (!day.rgb) {
-    const rgb = new Uint8Array(grid.W * grid.H * 3), have = new Uint8Array(grid.W * grid.H);
-    for (const it of day.items) { const a = await readAsset(grid, it, 'visual'); if (!a) continue;
-      for (let p = 0; p < have.length; p++) if (!have[p] && a.got[p] && (a.data[p * 3] | a.data[p * 3 + 1] | a.data[p * 3 + 2])) { have[p] = 1; rgb[p * 3] = a.data[p * 3]; rgb[p * 3 + 1] = a.data[p * 3 + 1]; rgb[p * 3 + 2] = a.data[p * 3 + 2]; } }
-    day.rgb = rgb;
-  }
+async function loadDayFull(grid, day, needScl = true, needNir = true) {
+  const jobs = [];
+  if (needScl && !day.scl) jobs.push(readSCL(grid, day).then(s => { day.scl = s; }));
+  if (!day.rgb) jobs.push(readVisual(grid, day).then(v => { day.rgb = v; }));
+  if (needNir && !day.nir) jobs.push(readNir(grid, day).then(v => { day.nir = v; }));
+  await Promise.all(jobs);
   return day;
+}
+async function readVisual(grid, day) {
+  const rgb = new Uint8Array(grid.W * grid.H * 3), have = new Uint8Array(grid.W * grid.H);
+  for (const it of day.items) { const a = await readAsset(grid, it, 'visual'); if (!a) continue;
+    for (let p = 0; p < have.length; p++) if (!have[p] && a.got[p] && (a.data[p * 3] | a.data[p * 3 + 1] | a.data[p * 3 + 2])) { have[p] = 1; rgb[p * 3] = a.data[p * 3]; rgb[p * 3 + 1] = a.data[p * 3 + 1]; rgb[p * 3 + 2] = a.data[p * 3 + 2]; } }
+  return rgb;
+}
+/* the NIR band (B08, 16 bit) as 8 bit: reflectance = DN * scale + offset from the item's raster:bands (Earth Search gives 0.0001 and -0.1), then 0..NIR_MAX_REFL to 0..255 */
+async function readNir(grid, day) {
+  const nir = new Uint8Array(grid.W * grid.H), have = new Uint8Array(grid.W * grid.H);
+  for (const it of day.items) { const a = await readAsset(grid, it, 'nir'); if (!a) continue;
+    const rb = ((it.assets.nir['raster:bands'] || [])[0]) || {}, sc = rb.scale ?? 1e-4, of = rb.offset ?? 0, k = 255 / NIR_MAX_REFL;
+    for (let p = 0; p < have.length; p++) if (!have[p] && a.got[p] && a.data[p]) { have[p] = 1; nir[p] = Math.max(0, Math.min(255, Math.round((a.data[p] * sc + of) * k))); } }
+  return nir;
 }
 function badFraction(grid, scl) {
   let bad = 0; for (let p = 0; p < scl.length; p++) if (grid.inPoly[p] && BAD.has(scl[p])) bad++;
@@ -383,7 +439,7 @@ async function buildYear(ctx, year, from, to, say, alive) {
   const all = await stacSearch(grid, win.start, win.end);
   if (!alive()) return null;
   /* some items only point to the original JP2 files on a requester-pays bucket (s3://sentinel-s2-l2a/...): a browser cannot read those, only the https COG copies */
-  const found = all.filter(it => ['scl', 'visual'].every(k => /^https:\/\//.test(((it.assets || {})[k] || {}).href || '')));
+  const found = all.filter(it => ['scl', 'visual', 'nir'].every(k => /^https:\/\//.test(((it.assets || {})[k] || {}).href || '')));
   const days = groupByDay(found).sort((a, b) => a.tileCloud - b.tileCloud);
   if (!days.length) return { year, kind: 'none', note: all.length ? `${all.length} scenes found, but none in a format the browser can read` : 'no Sentinel-2 L2A scene found in the season' };
   /* score in batches, lowest tile cloud first; stop as soon as one day is clear enough */
@@ -402,7 +458,7 @@ async function buildYear(ctx, year, from, to, say, alive) {
   if (best.bad <= MAX_CLEAR) {
     say(year, 'score', 'reading the picture');
     await loadDayFull(grid, best);
-    return { year, kind: 'scene', rgb: best.rgb, bad: best.bad, dates: [best.date], ids: best.items.map(i => i.id) };
+    return { year, kind: 'scene', rgb: best.rgb, nir: best.nir, bad: best.bad, dates: [best.date], ids: best.items.map(i => i.id) };
   }
   /* fallback: per-pixel median of the clear pixels of the best days of the season */
   const use = scored.filter(d => d.bad < 0.9).slice(0, MAX_COMPOSITE);
@@ -412,8 +468,8 @@ async function buildYear(ctx, year, from, to, say, alive) {
   if (!alive()) return null;
   const c = compose(grid, use);
   /* the best single day is kept as well (it is in `use`, already read): the viewer can show it instead of the composite */
-  return { year, kind: 'composite', rgb: c.rgb, bad: grid.count ? c.holes / grid.count : 1, dates: use.map(d => d.date).sort(), ids: use.flatMap(d => d.items.map(i => i.id)), n: use.length, mask: c.left,
-           single: { rgb: best.rgb, bad: best.bad, date: best.date, ids: best.items.map(i => i.id) } };
+  return { year, kind: 'composite', rgb: c.rgb, nir: c.nir, bad: grid.count ? c.holes / grid.count : 1, dates: use.map(d => d.date).sort(), ids: use.flatMap(d => d.items.map(i => i.id)), n: use.length, mask: c.left,
+           single: { rgb: best.rgb, nir: best.nir, bad: best.bad, date: best.date, ids: best.items.map(i => i.id) } };
 }
 
 /* the date of the earliest Sentinel-2 L2A scene Earth Search holds over the polygon: it differs by region (checked 2026-11-03: Alps 2016-11-01, Iceland 2016-11-03, Borneo 2017-02-05, Svalbard 2018-03-11) */
@@ -427,15 +483,17 @@ async function earliestScene(grid, pkey) {
 }
 /* per-pixel median of the clear pixels of several days; pixels with no clear value are marked in `left` */
 function compose(grid, use) {
-  const { W, H } = grid, rgb = new Uint8Array(W * H * 3), left = new Uint8Array(W * H), vals = [[], [], []];
+  const { W, H } = grid, rgb = new Uint8Array(W * H * 3), nir = new Uint8Array(W * H), left = new Uint8Array(W * H), vals = [[], [], [], []];
   let holes = 0;
   for (let p = 0; p < W * H; p++) {
-    vals[0].length = vals[1].length = vals[2].length = 0;
-    for (const d of use) if (d.rgb && d.scl && !BAD.has(d.scl[p])) for (let k = 0; k < 3; k++) vals[k].push(d.rgb[p * 3 + k]);
-    if (vals[0].length) for (let k = 0; k < 3; k++) { const v = vals[k].sort((a, b) => a - b); rgb[p * 3 + k] = v[v.length >> 1]; }
-    else { left[p] = 1; if (!grid.inPoly || grid.inPoly[p]) holes++; }
+    vals[0].length = vals[1].length = vals[2].length = vals[3].length = 0;
+    for (const d of use) if (d.rgb && d.scl && !BAD.has(d.scl[p])) { for (let k = 0; k < 3; k++) vals[k].push(d.rgb[p * 3 + k]); if (d.nir) vals[3].push(d.nir[p]); }
+    if (vals[0].length) {
+      for (let k = 0; k < 3; k++) { const v = vals[k].sort((a, b) => a - b); rgb[p * 3 + k] = v[v.length >> 1]; }
+      if (vals[3].length) { const v = vals[3].sort((a, b) => a - b); nir[p] = v[v.length >> 1]; }
+    } else { left[p] = 1; if (!grid.inPoly || grid.inPoly[p]) holes++; }
   }
-  return { rgb, left, holes };
+  return { rgb, nir, left, holes };
 }
 /* tropics: no summer. Pick the three months with the lowest mean tile cloud cover over all years (same months every year, so frames are comparable) */
 async function clearestQuarter(grid, rings, y0, y1, say) {
@@ -458,22 +516,28 @@ async function clearestQuarter(grid, rings, y0, y1, say) {
 /* ---------- view ---------- */
 const state = { hidden: new Set(), single: {}, preferSingle: false, pkey: '', frames: [], idx: 0, timer: null, grid: null, name: '', run: 0, byYear: {}, years: [], stat: {} };
 /* one frame (picture, outline, year) on any 2D context of size g.W x g.H; used by the screen and by the exports */
-function paintFrame(ctx, f, g) {
-  if (f.rgb) {
-    const img = ctx.createImageData(g.W, g.H);
+/* o.band: 'rgb' (true colour) or 'nir' (false colour: NIR, red, green); o.outline / o.label: draw the polygon and the year (the screen viewers draw those themselves); o.tag: a band name top right (exports) */
+function paintFrame(ctx, f, g, o = {}) {
+  const nirBand = o.band === 'nir';
+  if (f.rgb && (!nirBand || f.nir)) {
+    const img = ctx.createImageData(g.W, g.H), d = img.data;
     for (let p = 0; p < g.W * g.H; p++) {
-      if (f.mask && f.kind === 'composite' && f.mask[p]) { img.data[p * 4] = img.data[p * 4 + 1] = img.data[p * 4 + 2] = 40; }
-      else { img.data[p * 4] = f.rgb[p * 3]; img.data[p * 4 + 1] = f.rgb[p * 3 + 1]; img.data[p * 4 + 2] = f.rgb[p * 3 + 2]; }
-      img.data[p * 4 + 3] = 255; }
+      if (f.mask && f.kind === 'composite' && f.mask[p]) { d[p * 4] = d[p * 4 + 1] = d[p * 4 + 2] = 40; }
+      else if (nirBand) { d[p * 4] = f.nir[p]; d[p * 4 + 1] = f.rgb[p * 3]; d[p * 4 + 2] = f.rgb[p * 3 + 1]; }
+      else { d[p * 4] = f.rgb[p * 3]; d[p * 4 + 1] = f.rgb[p * 3 + 1]; d[p * 4 + 2] = f.rgb[p * 3 + 2]; }
+      d[p * 4 + 3] = 255; }
     ctx.putImageData(img, 0, 0);
-  } else { ctx.fillStyle = '#222c31'; ctx.fillRect(0, 0, g.W, g.H); ctx.fillStyle = '#9fb0b8'; ctx.font = `${Math.round(g.W / 28)}px sans-serif`; ctx.textAlign = 'center'; ctx.fillText('no usable picture', g.W / 2, g.H / 2); ctx.textAlign = 'left'; }
-  if ($('outline').checked) {
+  } else { ctx.fillStyle = '#222c31'; ctx.fillRect(0, 0, g.W, g.H); ctx.fillStyle = '#9fb0b8'; ctx.font = `${Math.round(g.W / 28)}px sans-serif`; ctx.textAlign = 'center'; ctx.fillText(f.rgb ? 'no NIR band for this picture' : 'no usable picture', g.W / 2, g.H / 2); ctx.textAlign = 'left'; }
+  const fs = Math.max(14, Math.round(g.W / 22));
+  if (o.tag) { ctx.font = `600 ${Math.round(fs * 0.7)}px sans-serif`; const tw = ctx.measureText(o.tag).width, pd = fs * 0.35;
+    ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(g.W - tw - pd * 2, 0, tw + pd * 2, fs * 1.2); ctx.fillStyle = '#fff'; ctx.fillText(o.tag, g.W - tw - pd, fs * 0.85); }
+  if (o.label === false) return;
+  if (o.outline !== false && $('outline').checked) {
     ctx.strokeStyle = '#ffffff'; ctx.lineWidth = Math.max(1.5, g.W / 400);
     for (const poly of state.rings) for (const ring of poly) { ctx.beginPath();
       ring.forEach(([x, y], i) => { const px = (x - g.w) / (g.e - g.w) * g.W, py = (g.n - y) / (g.n - g.s) * g.H; i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
       ctx.stroke(); }
   }
-  const fs = Math.max(14, Math.round(g.W / 22));
   ctx.font = `600 ${fs}px sans-serif`; ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(0, 0, fs * 3.2, fs * 1.6);
   ctx.fillStyle = '#fff'; ctx.fillText(String(f.year), fs * 0.4, fs * 1.15);
 }
@@ -486,7 +550,7 @@ function loadView() {
 }
 function saveView() { try { localStorage.setItem(prefsKey(), JSON.stringify({ hidden: [...state.hidden], single: state.single, prefer: state.preferSingle })); } catch {} }
 const useSingle = f => f.kind === 'composite' && f.single && (state.single[f.year] ?? state.preferSingle);
-const effective = f => useSingle(f) ? { year: f.year, kind: 'scene', rgb: f.single.rgb, bad: f.single.bad, dates: [f.single.date], ids: f.single.ids, forced: true } : f;
+const effective = f => useSingle(f) ? { year: f.year, kind: 'scene', rgb: f.single.rgb, nir: f.single.nir, bad: f.single.bad, dates: [f.single.date], ids: f.single.ids, forced: true } : f;
 function rebuildFrames(focusYear) {
   const keepYear = focusYear || (state.frames[state.idx] || {}).year;
   state.frames = state.years.filter(y => state.byYear[y] && state.byYear[y].rgb && !state.hidden.has(y)).map(y => effective(state.byYear[y]));
@@ -498,12 +562,189 @@ function rebuildFrames(focusYear) {
 }
 function viewChanged(year) { saveView(); rebuildFrames(year); }
 function draw() {
-  const f = state.frames[state.idx];
-  if (!f) { $('caption').textContent = state.years.length && !state.running ? 'No year to show: all years are hidden or without a picture.' : ''; renderChips(); return; }
-  paintFrame($('cv').getContext('2d'), f, state.grid);
+  const f = state.frames[state.idx], g = state.grid;
+  if (!f) { $('caption').textContent = state.years.length && !state.running ? 'No year to show: all years are hidden or without a picture.' : ''; renderChips(); renderViews(); return; }
+  for (const b of shownBands()) {   // the picture at its own resolution; the viewers scale it, and draw outline, year and measurements on top
+    const off = view.off[b] || (view.off[b] = document.createElement('canvas'));
+    if (off.width !== g.W || off.height !== g.H) { off.width = g.W; off.height = g.H; }
+    paintFrame(off.getContext('2d'), f, g, { band: b, label: false });
+  }
   $('slider').value = state.idx;
   $('caption').innerHTML = captionFor(f);
-  renderChips();
+  renderChips(); renderViews();
+}
+
+/* ---------- viewers: true colour and NIR side by side (or one of them), shared zoom, measuring ---------- */
+const BANDS = { rgb: 'True colour', nir: 'NIR false colour' };
+const ZMAX = 24;   // at most 24 times the fitted size
+const view = { z: 1, cx: 0, cy: 0, w: 0, h: 0, mode: 'both', tool: null, meas: [], draft: null, hover: null, off: {}, gridKey: '' };
+try { view.mode = ['rgb', 'nir', 'both'].includes(localStorage.getItem('gfs|mode')) ? localStorage.getItem('gfs|mode') : 'both'; } catch {}
+const shownBands = () => view.mode === 'both' ? ['rgb', 'nir'] : [view.mode];
+const vpCanvas = b => $('vp-' + b).querySelector('canvas');
+/* both viewers have the same size and the same view: image pixel (ix, iy) <-> screen point (sx, sy) inside a viewer */
+const vscale = () => view.w / state.grid.W * view.z;
+const toScreen = ([ix, iy]) => { const s = vscale(); return [(ix - view.cx) * s + view.w / 2, (iy - view.cy) * s + view.h / 2]; };
+const toImage = ([sx, sy]) => { const s = vscale(); return [view.cx + (sx - view.w / 2) / s, view.cy + (sy - view.h / 2) / s]; };
+const lonLatToImage = (lon, lat) => { const g = state.grid; return [(lon - g.w) / (g.e - g.w) * g.W, (g.n - lat) / (g.n - g.s) * g.H]; };
+const imageToLonLat = ([ix, iy]) => { const g = state.grid; return [g.w + ix / g.W * (g.e - g.w), g.n - iy / g.H * (g.n - g.s)]; };
+function resetView() { const g = state.grid; view.z = 1; if (g) { view.cx = g.W / 2; view.cy = g.H / 2; } }
+function clampView() {
+  const g = state.grid; view.z = Math.max(1, Math.min(ZMAX, view.z));
+  const hx = g.W / 2 / view.z, hy = g.H / 2 / view.z;
+  view.cx = Math.max(hx, Math.min(g.W - hx, view.cx)); view.cy = Math.max(hy, Math.min(g.H - hy, view.cy));
+}
+function zoomAt([sx, sy], k) {
+  if (!view.w) return;
+  const [ix, iy] = toImage([sx, sy]);
+  view.z *= k; clampView();
+  const s = vscale(); view.cx = ix - (sx - view.w / 2) / s; view.cy = iy - (sy - view.h / 2) / s; clampView();
+  renderViews();
+}
+/* size the viewers: side by side when there is room, otherwise one under the other; never taller than most of the window */
+function layoutViews() {
+  const g = state.grid, st = $('stage'); if (!g || st.hidden) return;
+  const bands = shownBands(), k = bands.length, gap = 6, A = st.clientWidth - 12;
+  for (const b of Object.keys(BANDS)) $('vp-' + b).hidden = !bands.includes(b);
+  const stack = k > 1 && (A - gap) / 2 < 260;
+  st.classList.toggle('stack', stack);
+  const per = k > 1 && !stack ? (A - gap) / 2 : A, maxH = innerHeight * (stack ? 0.42 : 0.7);
+  const w = Math.max(50, Math.floor(Math.min(per, maxH * g.W / g.H))), h = Math.round(w * g.H / g.W), dpr = window.devicePixelRatio || 1;
+  for (const b of bands) { const vp = $('vp-' + b), cv = vpCanvas(b); vp.style.width = w + 'px'; vp.style.height = h + 'px'; cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+  view.w = w; view.h = h;
+  renderViews();
+}
+function renderViews() {
+  if (!state.grid || !view.w) return;
+  for (const b of shownBands()) renderView(b);
+  $('zoomOut').disabled = $('zoomFit').disabled = view.z <= 1.001; $('zoomIn').disabled = view.z >= ZMAX - 0.001;
+}
+function pill(ctx, text, x, y, opts = {}) {
+  ctx.font = opts.font || '600 12px system-ui, sans-serif';
+  const tw = ctx.measureText(text).width, ph = opts.h || 20, pw = tw + 14;
+  x = Math.max(2, Math.min(view.w - pw - 2, x)); y = Math.max(2, Math.min(view.h - ph - 2, y));
+  ctx.fillStyle = opts.bg || 'rgba(14,20,23,.82)'; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, pw, ph, ph / 2) : ctx.rect(x, y, pw, ph); ctx.fill();
+  ctx.fillStyle = opts.color || '#fff'; ctx.textBaseline = 'middle'; ctx.fillText(text, x + 7, y + ph / 2 + 0.5); ctx.textBaseline = 'alphabetic';
+}
+function renderView(b) {
+  const g = state.grid, cv = vpCanvas(b), ctx = cv.getContext('2d'), dpr = cv.width / view.w;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.fillStyle = '#0e1417'; ctx.fillRect(0, 0, view.w, view.h);
+  const f = state.frames[state.idx], off = view.off[b]; if (!f || !off) return;
+  const s = vscale();
+  ctx.imageSmoothingEnabled = s < 2;   // zoomed in: show the real pixels, not a blur
+  ctx.drawImage(off, view.w / 2 - view.cx * s, view.h / 2 - view.cy * s, g.W * s, g.H * s);
+  if ($('outline').checked) {
+    ctx.lineJoin = 'round';
+    for (const [lw, col] of [[3.5, 'rgba(0,0,0,.35)'], [1.6, '#ffffff']]) { ctx.strokeStyle = col; ctx.lineWidth = lw;
+      for (const poly of state.rings) for (const ring of poly) { ctx.beginPath(); ring.forEach(([x, y], i) => { const [px, py] = toScreen(lonLatToImage(x, y)); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }); ctx.stroke(); } }
+  }
+  pill(ctx, String(f.year), 8, 8, { font: '700 14px system-ui, sans-serif', h: 24, bg: 'rgba(0,0,0,.6)' });
+  drawMeasures(ctx);
+}
+/* ---- measuring: great-circle lengths and spherical areas of points on the picture grid ---- */
+const R_EARTH = 6371008.8, RAD = Math.PI / 180;
+function geoDist(a, b) {
+  const [l1, p1] = imageToLonLat(a), [l2, p2] = imageToLonLat(b), dp = (p2 - p1) * RAD, dl = (l2 - l1) * RAD;
+  const h = Math.sin(dp / 2) ** 2 + Math.cos(p1 * RAD) * Math.cos(p2 * RAD) * Math.sin(dl / 2) ** 2;
+  return 2 * R_EARTH * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+function pathLength(pts, closed) { let s = 0; for (let i = 1; i < pts.length; i++) s += geoDist(pts[i - 1], pts[i]); if (closed && pts.length > 2) s += geoDist(pts[pts.length - 1], pts[0]); return s; }
+function geoArea(pts) {   // area of a polygon on the sphere (same formula as OpenLayers getArea)
+  if (pts.length < 3) return 0;
+  const ll = pts.map(imageToLonLat); let a = 0;
+  for (let i = 0; i < ll.length; i++) { const [l1, p1] = ll[i], [l2, p2] = ll[(i + 1) % ll.length]; a += (l2 - l1) * RAD * (2 + Math.sin(p1 * RAD) + Math.sin(p2 * RAD)); }
+  return Math.abs(a * R_EARTH * R_EARTH / 2);
+}
+const fmtLen = m => m < 1000 ? `${m.toFixed(0)} m` : `${(m / 1000).toFixed(m < 10000 ? 2 : 1)} km`;
+const fmtArea = a => a < 1e6 ? `${(a / 1e4).toFixed(a < 1e5 ? 2 : 1)} ha` : `${(a / 1e6).toFixed(a < 1e7 ? 2 : 1)} km²`;
+const measureLabel = m => m.type === 'line' ? fmtLen(pathLength(m.pts)) : m.pts.length > 2 ? fmtArea(geoArea(m.pts)) : fmtLen(pathLength(m.pts));
+function drawMeasures(ctx) {
+  const list = view.meas.map(m => ({ ...m, done: true }));
+  if (view.draft) list.push({ type: view.draft.type, pts: view.hover && view.tool ? [...view.draft.pts, view.hover] : view.draft.pts, done: false, real: view.draft.pts.length });
+  for (const m of list) {
+    const P = m.pts.map(toScreen); if (!P.length) continue;
+    const closed = m.type === 'poly' && P.length > 2;
+    ctx.beginPath(); P.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); if (closed) ctx.closePath();
+    if (closed) { ctx.fillStyle = 'rgba(255,214,64,.2)'; ctx.fill(); }
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.setLineDash([]); ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 4; ctx.stroke();
+    ctx.setLineDash(m.done ? [] : [6, 4]); ctx.strokeStyle = '#ffd640'; ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]);
+    for (const [x, y] of m.done ? P : P.slice(0, m.real)) { ctx.beginPath(); ctx.arc(x, y, 3.2, 0, 7); ctx.fillStyle = '#ffd640'; ctx.fill(); ctx.lineWidth = 1.2; ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.stroke(); }
+    if (m.pts.length < 2) continue;
+    let lx, ly;
+    if (closed) { lx = P.reduce((a, p) => a + p[0], 0) / P.length; ly = P.reduce((a, p) => a + p[1], 0) / P.length; ctx.font = '600 12px system-ui, sans-serif'; lx -= (ctx.measureText(measureLabel(m)).width + 14) / 2; ly -= 10; }
+    else { [lx, ly] = P[P.length - 1]; lx += 8; ly -= 26; }
+    pill(ctx, measureLabel(m), lx, ly, { bg: 'rgba(14,20,23,.85)', color: '#ffd640' });
+  }
+}
+function hitMeasure([sx, sy]) {
+  for (let i = view.meas.length - 1; i >= 0; i--) {
+    const m = view.meas[i], P = m.pts.map(toScreen), n = P.length, segs = m.type === 'poly' ? n : n - 1;
+    for (let k = 0; k < segs; k++) { const [ax, ay] = P[k], [bx, by] = P[(k + 1) % n], dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy;
+      const t = L ? Math.max(0, Math.min(1, ((sx - ax) * dx + (sy - ay) * dy) / L)) : 0;
+      if (Math.hypot(sx - ax - t * dx, sy - ay - t * dy) < 7) return i; }
+    if (m.type === 'poly' && pointIn(P, sx, sy)) return i;
+  }
+  return -1;
+}
+function finishDraft() {
+  const d = view.draft; view.draft = null;
+  if (d && d.pts.length >= (d.type === 'poly' ? 3 : 2)) view.meas.push(d);
+  renderViews(); updateReadout();
+}
+function clickAt(p) {
+  const ip = toImage(p);
+  if (view.tool === 'erase') { const i = hitMeasure(p); if (i >= 0) view.meas.splice(i, 1); }
+  else if (view.tool === 'line' || view.tool === 'poly') {
+    const d = view.draft;
+    if (!d) view.draft = { type: view.tool, pts: [ip] };
+    else {
+      const last = toScreen(d.pts[d.pts.length - 1]), first = toScreen(d.pts[0]);
+      if (Math.hypot(p[0] - last[0], p[1] - last[1]) < 6) return finishDraft();   // second click of a double-click, or a click on the last point
+      if (d.type === 'poly' && d.pts.length >= 3 && Math.hypot(p[0] - first[0], p[1] - first[1]) < 9) return finishDraft();
+      d.pts.push(ip);
+    }
+  }
+  renderViews(); updateReadout();
+}
+function setTool(t) {
+  if (view.draft) finishDraft();
+  view.tool = view.tool === t ? null : t;
+  document.querySelectorAll('[data-tool]').forEach(b => { if (b.tagName === 'BUTTON') b.classList.toggle('on', b.dataset.tool === view.tool); });
+  $('stage').dataset.tool = view.tool || '';
+  renderViews(); updateReadout();
+}
+function setMode(m) {
+  view.mode = m; try { localStorage.setItem('gfs|mode', m); } catch {}
+  document.querySelectorAll('#modes button').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
+  layoutViews(); draw(); updateExInfo();
+}
+function updateReadout() {
+  const el = $('readout'), d = view.draft, live = d && view.hover ? [...d.pts, view.hover] : d && d.pts;
+  let t = '';
+  if (view.tool === 'line') t = d ? `Distance ${fmtLen(pathLength(live))} · double-click or Enter to finish, Esc to cancel` : 'Click to start a line, click for each further point.';
+  else if (view.tool === 'poly') t = d ? (live.length > 2 ? `Area ${fmtArea(geoArea(live))} · perimeter ${fmtLen(pathLength(live, true))} · double-click, Enter or click the first corner to finish` : `Side ${fmtLen(pathLength(live))} · click the next corner`) : 'Click to place the first corner.';
+  else if (view.tool === 'erase') t = view.meas.length ? 'Click a measurement to remove it.' : 'No measurements to remove.';
+  else if (view.hover && state.grid) { const [lon, lat] = imageToLonLat(view.hover); t = `${Math.abs(lat).toFixed(5)}° ${lat >= 0 ? 'N' : 'S'}, ${Math.abs(lon).toFixed(5)}° ${lon >= 0 ? 'E' : 'W'} · drag to move, scroll to zoom`; }
+  el.textContent = t;
+  if (view.meas.length && !d) { const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = `remove all ${view.meas.length} measurement${view.meas.length > 1 ? 's' : ''}`;
+    b.onclick = () => { view.meas = []; renderViews(); updateReadout(); }; if (t) el.append(' · '); el.append(b); }
+}
+function bindViewer(cv) {
+  let down = null;
+  const pos = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  cv.addEventListener('pointerdown', e => { if (e.button !== 0) return; down = { p: pos(e), cx: view.cx, cy: view.cy, drag: false }; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener('pointermove', e => {
+    const p = pos(e);
+    if (down) { const dx = p[0] - down.p[0], dy = p[1] - down.p[1];
+      if (!down.drag && Math.hypot(dx, dy) > 4) { down.drag = true; cv.classList.add('dragging'); }
+      if (down.drag) { const s = vscale(); view.cx = down.cx - dx / s; view.cy = down.cy - dy / s; clampView(); } }
+    view.hover = toImage(p); renderViews(); updateReadout();
+  });
+  cv.addEventListener('pointerup', e => { if (!down) return; const dragged = down.drag; down = null; cv.classList.remove('dragging'); if (!dragged) clickAt(pos(e)); });
+  cv.addEventListener('pointercancel', () => { down = null; cv.classList.remove('dragging'); });
+  cv.addEventListener('pointerleave', () => { if (!down) { view.hover = null; renderViews(); updateReadout(); } });
+  cv.addEventListener('wheel', e => { e.preventDefault(); zoomAt(pos(e), Math.exp(-e.deltaY * (e.deltaMode ? 0.05 : 0.0015))); }, { passive: false });
+  cv.addEventListener('dblclick', e => { e.preventDefault(); if (view.draft) finishDraft(); else if (!view.tool) zoomAt(pos(e), 2); });
 }
 function captionFor(f) {
   const pct = f.bad == null ? '' : (f.bad * 100).toFixed(1) + ' %';
@@ -583,17 +824,20 @@ function exportFrames() { return state.frames.filter(f => f.rgb); }
    A polygon wider than the cap allows gets the finest pixel that fits and the page says which. Nothing is sharpened or invented; a small picture is only enlarged
    in whole pixels (no smoothing) for the video, so it is not tiny. */
 const EXPORT_CAP = { png: 2500, video: 1920, gif: 1000 };
+/* side by side halves the cap of video and GIF (each panel gets half the width); PNG keeps it */
+const exportCap = kind => kind === 'png' ? EXPORT_CAP.png : Math.round(EXPORT_CAP[kind] / shownBands().length);
 function exportSize(kind) {
   if ($('exQuality').value === 'standard') { const g = state.grid; return { W: g.W, H: g.H, pixelM: g.pixelM, same: true }; }
-  const h = setupGrid(state.rings, MIN_PIXEL_M, EXPORT_CAP[kind], false);
+  const h = setupGrid(state.rings, MIN_PIXEL_M, exportCap(kind), false);
   return { W: h.W, H: h.H, pixelM: h.pixelM, same: h.pixelM >= state.grid.pixelM - 0.01 };
 }
 function updateExInfo() {
   if (!state.rings) return;
   const one = k => { const z = exportSize(k); return z.same ? { W: state.grid.W, H: state.grid.H, pixelM: state.grid.pixelM } : z; };
-  const fmt = (name, z) => `${name} ${z.W} × ${z.H} px (${z.pixelM < 10.5 ? '10' : z.pixelM.toFixed(0)} m per pixel)`;
+  const k = shownBands().length;
+  const fmt = (name, z) => `${name} ${z.W * k + (k > 1 ? gapPx(z.W) : 0)} × ${z.H} px (${z.pixelM < 10.5 ? '10' : z.pixelM.toFixed(0)} m per pixel)`;
   const p = one('png'), v = one('video'), g = one('gif');
-  $('exInfo').textContent = ($('exQuality').value === 'standard' ? 'As shown: ' : 'Export size: ') + [fmt('PNG', p), fmt('video', v), fmt('GIF', g)].join(', ')
+  $('exInfo').textContent = (k > 1 ? 'True colour and NIR side by side. ' : view.mode === 'nir' ? 'NIR false colour. ' : 'True colour. ') + ($('exQuality').value === 'standard' ? 'As shown: ' : 'Export size: ') + [fmt('PNG', p), fmt('video', v), fmt('GIF', g)].join(', ')
     + ($('exQuality').value === 'high' && p.pixelM > 10.5 ? '. This polygon is too wide for 10 m pixels inside the size limits; the finest pixel that fits is used.' : '.');
 }
 const hiStore = new Map(), itemStore = new Map();
@@ -607,18 +851,19 @@ async function itemsById(ids) {
 }
 /* the same scene(s) of a frame read again on a finer grid */
 async function hiFrame(f, hg) {
-  const key = `${state.pkey}|${f.year}|${f.forced ? 'single' : f.kind}|${hg.W}x${hg.H}`;
+  const needNir = shownBands().includes('nir');
+  const key = `${state.pkey}|${f.year}|${f.forced ? 'single' : f.kind}|${hg.W}x${hg.H}|${needNir ? 'nir' : ''}`;
   if (hiStore.has(key)) return hiStore.get(key);
   const days = groupByDay(await itemsById(f.ids));
   if (!days.length) throw new Error(`the scenes of ${f.year} could not be found again`);
   let out;
   if (f.kind === 'composite') {
-    await pool(days.map(d => () => loadDayFull(hg, d, true)), 3);
+    await pool(days.map(d => () => loadDayFull(hg, d, true, needNir)), 3);
     const c = compose(hg, days.filter(d => d.rgb && d.scl));
-    out = { ...f, rgb: c.rgb, mask: c.left };
+    out = { ...f, rgb: c.rgb, nir: needNir ? c.nir : undefined, mask: c.left };
   } else {
-    await loadDayFull(hg, days[0], false);
-    out = { ...f, rgb: days[0].rgb, mask: undefined };
+    await loadDayFull(hg, days[0], false, needNir);
+    out = { ...f, rgb: days[0].rgb, nir: days[0].nir, mask: undefined };
   }
   if (hiStore.size > 12) hiStore.delete(hiStore.keys().next().value);
   hiStore.set(key, out);
@@ -630,7 +875,7 @@ async function exportSet(kind, frames, report) {
   if ($('exQuality').value === 'standard') return { grid: state.grid, frames };
   const z = exportSize(kind);
   if (z.same) return { grid: state.grid, frames };
-  const hg = setupGrid(state.rings, MIN_PIXEL_M, EXPORT_CAP[kind], false), out = [];
+  const hg = setupGrid(state.rings, MIN_PIXEL_M, exportCap(kind), false), out = [];
   for (let i = 0; i < frames.length; i++) {
     report(`Reading ${hg.W} × ${hg.H} px pictures: ${i + 1} of ${frames.length} (${frames[i].year})`, i / frames.length);
     out.push(await hiFrame(frames[i], hg));
@@ -638,17 +883,22 @@ async function exportSet(kind, frames, report) {
   return { grid: hg, frames: out };
 }
 /* one export frame: the picture plus a credit band; scale > 1 enlarges in whole pixels without smoothing */
+/* the export shows what the viewer shows: true colour, NIR, or both side by side (one picture each, a thin gap between) */
+const gapPx = w1 => Math.max(4, Math.round(w1 / 150));
 function exportCanvas(f, g, scale = 1) {
-  const w = g.W * scale, h = g.H * scale, fs = Math.max(11, Math.round(w / 40)), band = Math.round(fs * 2.9), c = document.createElement('canvas');
+  const bands = shownBands(), k = bands.length, w1 = g.W * scale, gap = k > 1 ? gapPx(w1) : 0, w = w1 * k + gap * (k - 1), h = g.H * scale;
+  const fs = Math.max(11, Math.round(Math.min(w, w1 * 1.4) / 40)), band = Math.round(fs * 2.9), c = document.createElement('canvas');
   c.width = even(w); c.height = even(h + band);
   const ctx = c.getContext('2d'); ctx.fillStyle = '#0e1417'; ctx.fillRect(0, 0, c.width, c.height);
-  const t = document.createElement('canvas'); t.width = g.W; t.height = g.H; paintFrame(t.getContext('2d'), f, g);
   ctx.imageSmoothingEnabled = scale === 1;
-  ctx.drawImage(t, 0, 0, w, h);
+  bands.forEach((b, i) => {
+    const t = document.createElement('canvas'); t.width = g.W; t.height = g.H; paintFrame(t.getContext('2d'), f, g, { band: b, tag: k > 1 || b === 'nir' ? BANDS[b] : null });
+    ctx.drawImage(t, i * (w1 + gap), 0, w1, h);
+  });
   ctx.fillStyle = '#e8eef0'; ctx.font = `${fs}px sans-serif`; ctx.textBaseline = 'top';
   const what = f.kind === 'scene' ? `${f.forced ? 'best single scene' : 'scene'} ${f.dates[0]}${f.forced ? `, ${(f.bad * 100).toFixed(0)} % cloud` : ''}` : `composite of ${f.n} days, ${f.dates[0]} to ${f.dates[f.dates.length - 1]}`;
   ctx.fillText(`${state.name ? state.name + ' · ' : ''}${f.year} · ${what}`, Math.round(fs * 0.5), h + Math.round(fs * 0.35));
-  ctx.fillStyle = '#9fb0b8'; ctx.fillText('Contains modified Copernicus Sentinel data · Sentinel-2 L2A', Math.round(fs * 0.5), h + Math.round(fs * 1.55));
+  ctx.fillStyle = '#9fb0b8'; ctx.fillText('Contains modified Copernicus Sentinel data · Sentinel-2 L2A' + (bands.includes('nir') ? ' · NIR false colour = B08, red, green' : ''), Math.round(fs * 0.5), h + Math.round(fs * 1.55));
   return c;
 }
 function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10000); }
@@ -687,7 +937,7 @@ async function exportVideo() {
   if (!type) { setExporting(false, 'This browser cannot record video; use the GIF.'); return; }
   setExporting(true, 'Preparing…', 0);
   const set = await exportSet('video', exportFrames(), (n, fr) => setExporting(true, n, fr * 0.5)), fr = set.frames;
-  const long = Math.max(set.grid.W, set.grid.H), scale = $('exQuality').value === 'high' && long < 1080 ? Math.ceil(1080 / long) : 1;
+  const long = Math.max(set.grid.W * shownBands().length, set.grid.H), scale = $('exQuality').value === 'high' && long < 1080 ? Math.ceil(1080 / long) : 1;
   const first = exportCanvas(fr[0], set.grid, scale), c = document.createElement('canvas'); c.width = first.width; c.height = first.height;
   const bits = Math.min(25e6, Math.max(8e6, c.width * c.height * 6));
   const ctx = c.getContext('2d'), rec = new MediaRecorder(c.captureStream(30), { mimeType: type, videoBitsPerSecond: bits }), chunks = [];
@@ -738,8 +988,10 @@ async function runInner(cfg) {
   $('loading').classList.remove('done'); $('tbl').hidden = true; $('chips').innerHTML = ''; $('progress').firstElementChild.style.width = '0';
   $('loadHead').textContent = 'Starting…'; $('status').textContent = '';
   const g = state.grid = setupGrid(cfg.rings), sg = setupGrid(cfg.rings, SCORE_PIXEL_M, SCORE_SIDE); state.rings = cfg.rings;
-  const cv = $('cv'); cv.width = g.W; cv.height = g.H;
   const pkey = state.pkey = polyKey(cfg.rings); loadView();
+  const gk = `${pkey}|${g.W}x${g.H}`;
+  if (view.gridKey !== gk) { view.gridKey = gk; view.meas = []; view.draft = null; resetView(); }
+  layoutViews();
   $('loadHead').textContent = 'Checking which years Earth Search has for this place…';
   const earliest = await earliestScene(g, pkey); if (!alive()) return;
   if (!earliest) { state.running = false; $('loading').classList.add('done'); $('loadHead').textContent = 'Earth Search has no Sentinel-2 L2A scene over this polygon.'; return; }
@@ -812,6 +1064,21 @@ function init() {
   $('outline').onchange = draw;
   $('preferSingle').onchange = e => { state.preferSingle = e.target.checked; state.single = {}; viewChanged(); };
   $('exQuality').onchange = updateExInfo;
+  for (const b of Object.keys(BANDS)) bindViewer(vpCanvas(b));
+  document.querySelectorAll('button[data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
+  document.querySelectorAll('#modes button').forEach(b => b.onclick = () => setMode(b.dataset.mode));
+  document.querySelectorAll('#modes button').forEach(b => b.classList.toggle('on', b.dataset.mode === view.mode));
+  $('zoomIn').onclick = () => zoomAt([view.w / 2, view.h / 2], 1.6);
+  $('zoomOut').onclick = () => zoomAt([view.w / 2, view.h / 2], 1 / 1.6);
+  $('zoomFit').onclick = () => { resetView(); renderViews(); };
+  new ResizeObserver(() => layoutViews()).observe($('stage'));
+  addEventListener('resize', layoutViews);
+  addEventListener('keydown', e => {
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+    if (e.key === 'Escape') { if (view.draft) { view.draft = null; renderViews(); updateReadout(); } else if (view.tool) setTool(view.tool); }
+    else if (e.key === 'Enter' && view.draft) { e.preventDefault(); finishDraft(); }
+    else if (e.key === 'Backspace' && view.draft) { e.preventDefault(); view.draft.pts.pop(); if (!view.draft.pts.length) view.draft = null; renderViews(); updateReadout(); }
+  });
   $('exGif').onclick = guarded(exportGif); $('exVideo').onclick = guarded(exportVideo); $('exPng').onclick = guarded(exportPng);
   $('rebuild').onclick = () => run({ ...cfg, auto: false });
   $('forget').onclick = async () => { await store.clear(); showCacheInfo(); $('status').textContent = 'Saved pictures removed from this browser.'; };

@@ -98,6 +98,15 @@ Before, every export was the 800 px picture shown on screen (about 20 to 55 m pe
 ## D-14 Caching for free polygons: proposal only (owner question, 2026-11-03)
 Measured where the time goes (3 years, empty cache): about 21 to 25 s wall time, 130 to 195 range requests and 52 to 93 MB downloaded per run, but only 7 catalogue requests (1.2 to 1.6 s each). The slow part is reading pixels and scoring days, not the catalogue search. Options, ranking and open points are in `docs/CACHING_OPTIONS.md`. Recommended next steps: cell-keyed browser cache and progressive (coarse-first) loading; then, if first-time speed matters, a static cloud index built by a GitHub Action; a shared writable picture cache only after the GfS team decides and the free-tier terms are read (Q-12). Nothing is built yet.
 
+## D-15 NIR view, side by side, zoom and measuring (owner request, 2026-11-06)
+- **NIR view:** false colour with near infrared (B08) in red, the TCI red in green and the TCI green in blue, so healthy vegetation shows bright red. Only one extra band is read per scene (B08, 10 m); red and green are taken from the TCI already read. Reflectance = DN × scale + offset from the item's `raster:bands` (checked 2026-11-06 on S2A_50NPM_20231228_0_L2A and S2A_50NPM_20191229_1_L2A: scale 0.0001, offset -0.1, `earthsearch:boa_offset_applied: true`), stretched 0 to 0.5 → 0 to 255. Composites take the per-pixel median of NIR like the other bands. Scenes without an https `nir` asset are skipped. `CACHE_VERSION` is `v3` (older saved years have no NIR).
+  Alternatives: read red and green as 16-bit bands too (consistent stretch, three times more NIR-view downloads); NIR alone in grey (less readable). Not chosen for cost.
+- **View switch** RGB / Both / NIR (remembered per browser). Both: side by side, stacked when the window is narrower than about 530 px. Exports follow the switch; side by side halves the video and GIF size cap per panel.
+- **Zoom and pan** shared by both viewers: scroll, double-click, +/−, Fit; drag to pan; up to 24×; pixels shown unsmoothed when zoomed in.
+- **Measuring:** Line (great-circle length), Area (spherical polygon area, the OpenLayers formula, plus perimeter in the readout), Erase (click a measurement), "remove all". Enter finishes, Esc cancels, Backspace removes the last point. Measurements are shown on both viewers, not in exports, and are kept until the polygon changes.
+- Controls sit in one row under the viewers with Play/Speed; the time slider is shorter, the loading bar thinner (3 px).
+- **Tested** 2026-11-06 in headless Chromium on the Borneo box (2021 to 2023): three composites with NIR, zoom 1.8×, a 6.05 km line and a 4.42 km² area, NIR-only view, phone width (stacked), PNG export side by side (5017 × 2496 px at High), no page errors. **Not checked:** measured values against a GIS, Safari/Firefox/touch devices, video and GIF export with both views. Erase by click checked separately: a click away from the line keeps it, a click on it removes it.
+
 ## Open questions (for the owner / project leader)
 
 - **Q-01** (answered 2026-11-03: public repo `braakhekke/GfS`, created by the owner.)
