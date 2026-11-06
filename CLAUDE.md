@@ -49,12 +49,13 @@ The user-experience gap: the results map shows the polygons but there is no way 
 | Path | What |
 |---|---|
 | `CLAUDE.md` | this file: aim, constraints, rules |
-| `mockup/results.html` | mockup of the Results page with the wire (invented polygons, D-05) |
+| `mockup/results.html` | mockup of the Results page with the wire (invented polygons, D-05) and free drawing (D-21; Leaflet-Geoman 2.20.1 from jsDelivr) |
 | `docs/INTEGRATION.md` | proposal for wiring into the real tool |
 | `index.html` | the standalone timelapse page (all code in one file; libraries proj4 2.9.0 and geotiff 2.1.3 from CDNs) |
 | `docs/DECISIONS.md` | decision log and open questions |
 | `docs/URL_CONTRACT.md` | how to link to the page with a polygon |
 | `docs/TOOL_WALKTHROUGH.md` | what each screenshot shows |
+| `docs/img/preview.jpg` | README preview (Borneo example box, 2019 to 2023, Both view, taken 2026-11-06 in headless Chromium) |
 | `screenshots/` | gitignored, 01 to 17 |
 
 ## Status log
@@ -73,4 +74,11 @@ The user-experience gap: the results map shows the polygons but there is no way 
 - 2026-11-03: mockup gets a Turkey polygon and centre markers; export progress bar; cleaner page styling; scenes with s3:// asset links are skipped (D-12).
 - 2026-11-03: exports have a Quality menu; High re-reads the scenes at 10 m (D-13).
 - 2026-11-06: NIR false-colour view, RGB / Both / NIR switch, shared zoom and pan, measuring (line, area, erase) in one control row with Play/Speed (D-15); `CACHE_VERSION` is `v3`.
+- 2026-11-06: loading keeps going in a background tab: zero-delay timeouts (geotiff.js waits on one before every block fetch) run through a MessageChannel instead of the throttled timer (D-16).
+- 2026-11-06: viewers appear at once while loading, with a message and a cloud-free EOxCloudless 2024 map of the place under it until the first year is ready (D-17, non-commercial licence: Q-13).
+- 2026-11-06: header buttons Pick a population (closes the tab, or follows `back=` / referrer / `mockup/results.html`) and GfS tool (D-18); footer credits structured as label and text; scenes per year as a fold-out list linked to STAC Browser (D-19).
+- 2026-11-06: Speed is a slider in frames per second, 0.5 to 8, default 2 (D-20).
 - 2026-11-03: measured where load time goes and wrote the caching/free-polygon proposal (D-14, docs/CACHING_OPTIONS.md); nothing built.
+- 2026-11-06: free drawing on the mockup Results page (polygon or rectangle, at most 60 × 60 km, live size and warning, D-21); export size info in `index.html` set out as a small table with a note on which formats miss 10 m.
+- 2026-11-06: README rewritten for visitors (what it does, how to use it, preview image); "Try it locally" moved out of the README (still in this file).
+- 2026-11-06: README brought up to date with D-16 to D-21 (drawing your own area, speed slider, scene lists, background map and its non-commercial credit).

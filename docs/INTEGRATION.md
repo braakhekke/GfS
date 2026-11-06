@@ -13,6 +13,7 @@ Two ways, depending on how the Results map is built (the popup in the screenshot
        return base + "#geojson=" + urllib.parse.quote(json.dumps(polygon_geojson), safe="") + "&name=" + urllib.parse.quote(name, safe="")
    ```
    Show it with `st.link_button` (available in recent Streamlit versions; the version used by the tool has not been checked) or a markdown link with `target="_blank"` via HTML.
+   Add `&back=<URL-encoded address of the Results page>` to the link so the timelapse's **Pick a population** button leads there (D-18).
 2. **Link inside the polygon popup (map side).** Put an `<a target="_blank">` in the popup HTML of each population with the same URL. The mockup does this (JavaScript `timelapseUrl`).
 
 Notes: the polygon must be in longitude/latitude (WGS84, EPSG:4326). Very detailed polygons make long URLs; simplify to a few hundred vertices. The page runs entirely in the visitor's browser and sends nothing to a GfS server.

@@ -22,11 +22,27 @@
   #app { display:flex; flex-direction:column; gap:12px; }
   #app[hidden], [hidden] { display:none !important; }
   .panel { background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:12px 16px; }
-  .settings { display:flex; gap:10px 22px; align-items:center; flex-wrap:wrap; }
-  .settings label, .player label { display:inline-flex; gap:6px; align-items:center; color:var(--muted); }
-  .settings .grow { flex:1; }
+  /* settings: one row of inputs, the notes under it as a small two-column list */
+  .settings { display:flex; gap:10px 18px; align-items:center; flex-wrap:wrap; }
+  .settings .field { display:inline-flex; gap:6px; align-items:center; white-space:nowrap; }
+  .settings .lbl { font-weight:600; color:var(--ink); margin-right:2px; }
+  .settings .to { color:var(--muted); font-size:13px; }
+  .settings select, .settings button { height:32px; }
+  .settings .check { display:inline-flex; gap:6px; align-items:center; color:var(--muted); white-space:nowrap; cursor:pointer; }
+  .settings .vsep { width:1px; height:22px; background:var(--line); }
+  .settings #rebuild { margin-left:auto; }
   .note { color:var(--muted); font-size:12.5px; margin:0; }
-  .notes { display:flex; flex-direction:column; gap:2px; margin-top:8px; }
+  #exInfo .exhead { margin-bottom:4px; }
+  #exInfo .exsize { display:grid; grid-template-columns:max-content max-content max-content; gap:2px 18px; font-variant-numeric:tabular-nums; }
+  #exInfo .exsize span:first-child, #exInfo .exsize span:nth-child(3n+1) { color:var(--ink); font-weight:600; }
+  #exInfo .exnote { margin-top:6px; color:var(--warn); }
+  .notes { display:grid; grid-template-columns:max-content 1fr; gap:3px 12px; margin:10px 0 0; padding-top:10px; border-top:1px solid var(--line); font-size:12.5px; color:var(--muted); }
+  .notes dt { font-weight:600; color:var(--ink); }
+  .notes dd { margin:0; }
+  .notes > div { display:contents; }
+  .notes > div:has(dd:empty) { display:none; }
+  .notes:not(:has(dd:not(:empty))) { display:none; }
+  @media (max-width:640px) { .settings .vsep { display:none; } .settings #rebuild { margin-left:0; } }
   .warn { color:var(--warn); }
   /* controls */
   button, select { font:inherit; color:var(--ink); }
@@ -36,26 +52,36 @@
   button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; min-width:78px; }
   button.primary:hover:not(:disabled) { background:#185a41; border-color:#185a41; }
   button:disabled, select:disabled { opacity:.5; cursor:not-allowed; background:#eef1f2; }
+  button.primary:disabled { color:var(--muted); border-color:var(--line); }
   input[type=range] { flex:1; min-width:160px; accent-color:var(--accent); }
   input[type=checkbox] { accent-color:var(--accent); }
   /* loading */
-  #loading { padding:12px 16px; }
-  #loading.done { background:transparent; border-color:transparent; padding:0 2px; }
-  #progress { height:3px; background:var(--todo); border-radius:2px; overflow:hidden; margin:6px 0 4px; }
+  /* loading and year buttons: a row in the control panel under the viewers */
+  #loading { display:flex; gap:8px 14px; align-items:center; flex-wrap:wrap; margin-top:10px; padding-top:10px; border-top:1px solid var(--line); }
+  #progress { flex-basis:100%; height:3px; background:var(--todo); border-radius:2px; overflow:hidden; }
   #progress > i, #exProg > i { display:block; height:100%; width:0; background:var(--ok); transition:width .3s; border-radius:3px; }
   #loading.done #progress { display:none; }
+  .lstat { margin-left:auto; color:var(--muted); font-size:12.5px; display:inline-flex; gap:6px; align-items:center; }
+  .lstat #status:not(:empty)::before { content:"· "; }
   .spin { display:inline-block; width:12px; height:12px; border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:sp .8s linear infinite; vertical-align:-2px; margin-right:8px; }
+  .lstat .spin { margin-right:2px; }
   #loading.done .spin { display:none; }
   @keyframes sp { to { transform:rotate(360deg); } }
-  #chips { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
-  .chip { min-width:60px; padding:3px 9px; border-radius:14px; border:1px solid var(--line); background:#fff; font-size:12px; text-align:center; cursor:default; }
-  .chip small { display:block; color:var(--muted); font-size:10.5px; line-height:1.25; }
-  .chip.search, .chip.score, .chip.composite { border-color:var(--busy); background:#fff8e1; }
-  .chip.done { border-color:#b9d8c9; background:var(--accent-soft); cursor:pointer; }
-  .chip.cached { border-color:#b8cdee; background:#eaf1fc; cursor:pointer; }
-  .chip.none, .chip.error { border-color:#e3b5b0; background:#fbeceb; }
-  .chip.on { box-shadow:0 0 0 2px var(--ink); }
+  #chips { display:flex; gap:6px; flex-wrap:wrap; }
+  #chips:empty { display:none; }
+  .chip { height:28px; padding:0 10px; display:inline-flex; gap:6px; align-items:center; border-radius:8px; border:1px solid var(--line); background:#fff; font-size:12.5px; font-weight:600; font-variant-numeric:tabular-nums; color:var(--muted); cursor:default; transition:background .15s, border-color .15s; }
+  .chip small { font-weight:400; font-size:11.5px; }
+  .chip .dot { width:7px; height:7px; border-radius:50%; background:var(--todo); flex:none; }
+  .chip.search .dot, .chip.score .dot, .chip.composite .dot { background:var(--busy); }
+  .chip.done .dot { background:var(--ok); }
+  .chip.cached .dot { background:var(--cache); }
+  .chip.none .dot, .chip.error .dot { background:var(--none); }
+  .chip.done, .chip.cached { color:var(--ink); cursor:pointer; }
+  .chip.done:hover, .chip.cached:hover { background:var(--accent-soft); border-color:#b9d8c9; }
+  .chip.on, .chip.on:hover { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .chip.on .dot { background:#fff; }
   .chip.hid { opacity:.45; text-decoration:line-through; }
+  @media (max-width:640px) { .lstat { margin-left:0; } }
   /* viewer */
   .stage { position:relative; background:#0e1417; border-radius:var(--radius); overflow:hidden; padding:6px; display:flex; justify-content:center; gap:6px; box-shadow:0 1px 3px rgba(0,0,0,.12); }
   .stage.stack { flex-direction:column; align-items:center; }
@@ -64,12 +90,24 @@
   .vp canvas.dragging { cursor:grabbing; }
   .stage[data-tool=line] canvas, .stage[data-tool=poly] canvas { cursor:crosshair; }
   .stage[data-tool=erase] canvas { cursor:pointer; }
+  /* while loading: a message over the background map (D-17); smaller once the first year shows */
+  .vp .wait { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; }
+  .vp .wait > span { color:#fff; font-size:13px; font-weight:600; background:rgba(14,20,23,.72); padding:7px 14px; border-radius:16px; max-width:80%; text-align:center; }
+  .vp .wait .spin { border-color:rgba(255,255,255,.35); border-top-color:#fff; }
+  .vp .wait.small { inset:auto auto 8px 8px; }
+  .vp .wait.small > span { font-size:11.5px; padding:3px 10px; white-space:nowrap; max-width:none; }
+  .vp .wait.small .spin { width:9px; height:9px; margin-right:6px; }
+  .vp .wait[hidden], .vp .credit[hidden] { display:none; }
+  .vp .credit { position:absolute; right:0; bottom:0; font-size:10px; line-height:1.3; color:#fff; background:rgba(0,0,0,.55); padding:2px 6px; border-top-left-radius:6px; max-width:100%; }
+  .vp .credit a { color:#fff; }
   .vp .tag { position:absolute; top:8px; right:8px; font-size:11.5px; font-weight:600; letter-spacing:.02em; color:#fff; background:rgba(0,0,0,.55); padding:2px 9px; border-radius:10px; pointer-events:none; }
   /* control bar under the viewers: time, measuring, zoom, view */
   .bar { display:flex; gap:10px 14px; align-items:center; flex-wrap:wrap; }
   .bar .time { display:flex; gap:10px; align-items:center; flex:0 1 380px; min-width:240px; }
   .bar .time input[type=range] { min-width:90px; }
   .bar .lbl { display:inline-flex; gap:6px; align-items:center; color:var(--muted); }
+  .bar .time input#speed { flex:none; width:90px; min-width:0; }
+  #speedVal { min-width:4.2em; font-variant-numeric:tabular-nums; }
   .bar button.primary, .bar select { height:32px; }
   .bar .push { margin-left:auto; }
   .seg { display:inline-flex; height:32px; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:#fff; }
@@ -99,22 +137,63 @@
   tbody tr:hover td { background:#fafbfb; }
   tr.hid td { color:#98a3a9; }
   td.acts { white-space:nowrap; text-align:right; }
+  /* scene list per year: folded to a count, opens in the row (D-19) */
+  details.scenes summary { cursor:pointer; list-style:none; display:inline-flex; align-items:center; gap:5px; padding:2px 9px 2px 7px; border:1px solid var(--line); border-radius:14px; background:#fff; white-space:nowrap; font-size:12px; }
+  details.scenes summary::-webkit-details-marker { display:none; }
+  details.scenes summary::before { content:''; width:6px; height:6px; border:solid currentColor; border-width:0 1.6px 1.6px 0; transform:rotate(45deg) translate(-1px,-1px); transition:transform .15s; }
+  details.scenes[open] summary::before { transform:rotate(-135deg) translate(-1px,-1px); }
+  details.scenes summary:hover { background:var(--accent-soft); border-color:#b9d8c9; }
+  details.scenes ul { margin:6px 0 0; padding:0; list-style:none; max-height:220px; overflow-y:auto; }
+  details.scenes li { display:flex; gap:10px; padding:2px 0; white-space:nowrap; }
+  details.scenes li .d { color:var(--muted); min-width:80px; }
+  details.scenes a { color:inherit; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:11.5px; }
   .mini { display:inline-flex; align-items:center; gap:5px; padding:3px 9px 3px 7px; margin-left:4px; font-size:12px; color:var(--muted); background:#f3f6f6; border:1px solid transparent; border-radius:14px; }
   .mini svg { width:13px; height:13px; stroke:currentColor; fill:none; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
   .mini:hover:not(:disabled) { color:var(--ink); background:var(--accent-soft); border-color:#b9d8c9; }
   .mini.danger:hover:not(:disabled) { color:var(--none); background:#fbeceb; border-color:#e3b5b0; }
-  footer { color:var(--muted); font-size:12px; line-height:1.55; padding:0 2px; }
+  /* credits and notes at the bottom: a label column and a text column (one column on a phone) */
+  footer { color:var(--muted); font-size:12px; line-height:1.55; padding:12px 2px 4px; border-top:1px solid var(--line); }
+  footer dl { display:grid; grid-template-columns:max-content 1fr; gap:6px 18px; margin:0; }
+  footer dt { font-weight:600; color:var(--ink); }
+  footer dd { margin:0; }
+  footer a { color:inherit; }
+  @media (max-width:600px) { footer dl { grid-template-columns:1fr; gap:0; } footer dd { margin-bottom:8px; } }
+  /* back to the population overview (Results page), top left */
+  header .nav { display:flex; gap:6px; align-self:center; }
+  a.back { display:inline-flex; align-items:center; gap:6px; padding:5px 12px 5px 9px; border:1px solid var(--line); border-radius:8px; color:var(--ink); text-decoration:none; font-size:13px; font-weight:500; align-self:center; transition:background .15s, border-color .15s; }
+  a.back:hover { background:var(--accent-soft); border-color:#b9d8c9; }
+  a.back svg { width:15px; height:15px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
   code { background:#eef2f2; padding:1px 4px; border-radius:3px; }
   .help { background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:14px 18px; }
   a { color:var(--accent); }
   button.linkbtn { color:var(--muted); cursor:pointer; text-decoration:underline; background:none; border:0; padding:0; font:inherit; border-radius:0; }
   button.linkbtn:hover:not(:disabled) { background:none; color:var(--ink); border:0; }
 </style>
+<script>
+/* keep loading in a background tab (D-16): geotiff.js waits on setTimeout(0) before every block fetch, and browsers stretch timers in hidden tabs
+   (Chrome: at least 1 s, up to 1 min after 5 min hidden), so loading nearly stopped when the tab was not in front.
+   Zero-delay timeouts run through a MessageChannel instead, which is not throttled; timeouts with a real delay are left as they are. */
+(() => {
+  const ch = new MessageChannel(), queue = new Map(), nativeSet = window.setTimeout.bind(window), nativeClear = window.clearTimeout.bind(window);
+  let next = 0;
+  ch.port1.onmessage = e => { const f = queue.get(e.data); if (f) { queue.delete(e.data); f(); } };
+  window.setTimeout = (fn, ms, ...args) => {
+    if (typeof fn !== 'function' || +ms > 0) return nativeSet(fn, ms, ...args);
+    const id = --next;   // negative ids never clash with the browser's own
+    queue.set(id, () => fn(...args)); ch.port2.postMessage(id); return id;
+  };
+  window.clearTimeout = id => (id < 0 ? queue.delete(id) : nativeClear(id));
+})();
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/geotiff@2.1.3/dist-browser/geotiff.js"></script>
 </head>
 <body>
 <header>
+  <nav class="nav" aria-label="Back">
+    <a class="back" id="back" href="mockup/results.html" title="Back to the page where you pick a population"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg><span>Pick a population</span></a>
+    <a class="back" id="tool" href="https://www.gfstool.com/" title="The Genes from Space tool (gfstool.com)"><svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg><span>GfS tool</span></a>
+  </nav>
   <h1>Genes from Space: population timelapse</h1>
   <span class="sub" id="title"></span>
 </header>
@@ -127,31 +206,25 @@
   <div id="app" hidden>
     <div class="panel">
       <div class="settings">
-        <label>Years <select id="yFrom"></select> to <select id="yTo"></select></label>
-        <label>Season <select id="mFrom"></select> to <select id="mTo"></select></label>
-        <label><input type="checkbox" id="outline" checked> Outline</label>
-        <label title="For years without a clear scene, show the least cloudy single scene instead of the composite (clouds stay visible)"><input type="checkbox" id="preferSingle"> Best single scene, not composite</label>
-        <span class="grow"></span>
-        <button id="rebuild">Rebuild</button>
+        <span class="field"><span class="lbl">Years</span><select id="yFrom" aria-label="First year"></select><span class="to">to</span><select id="yTo" aria-label="Last year"></select></span>
+        <span class="field"><span class="lbl">Season</span><select id="mFrom" aria-label="First month"></select><span class="to">to</span><select id="mTo" aria-label="Last month"></select></span>
+        <span class="vsep"></span>
+        <label class="check"><input type="checkbox" id="outline" checked> Outline</label>
+        <label class="check" title="For years without a clear scene, show the least cloudy single scene instead of the composite (clouds stay visible)"><input type="checkbox" id="preferSingle"> Best single scene</label>
+        <button id="rebuild" class="primary">Rebuild</button>
       </div>
-      <div class="notes"><div class="note" id="yearNote"></div><div class="note" id="seasonNote"></div></div>
-    </div>
-    <div id="loading" class="panel">
-      <div><span class="spin"></span><b id="loadHead">Starting…</b></div>
-      <div id="progress"><i></i></div>
-      <div class="note" id="status"></div>
-      <div id="chips"></div>
+      <dl class="notes"><div><dt>Years</dt><dd id="yearNote"></dd></div><div><dt>Season</dt><dd id="seasonNote"></dd></div></dl>
     </div>
     <div class="stage" id="stage" hidden>
-      <figure class="vp" id="vp-rgb"><canvas></canvas><figcaption class="tag">True colour</figcaption></figure>
-      <figure class="vp" id="vp-nir"><canvas></canvas><figcaption class="tag" title="Near infrared (B08) as red, red as green, green as blue: healthy vegetation shows bright red">NIR false colour</figcaption></figure>
+      <figure class="vp" id="vp-rgb"><canvas></canvas><figcaption class="tag">True colour</figcaption><div class="wait" hidden><span><i class="spin"></i><b></b></span></div><div class="credit" hidden></div></figure>
+      <figure class="vp" id="vp-nir"><canvas></canvas><div class="wait" hidden><span><i class="spin"></i><b></b></span></div><div class="credit" hidden></div><figcaption class="tag" title="Near infrared (B08) as red, red as green, green as blue: healthy vegetation shows bright red">NIR false colour</figcaption></figure>
     </div>
     <div class="panel">
       <div class="bar">
         <div class="time">
           <button id="play" class="primary">Play</button>
           <input type="range" id="slider" min="0" max="0" value="0" aria-label="Year">
-          <label class="lbl">Speed <select id="speed"><option value="1500">Slow</option><option value="900" selected>Normal</option><option value="450">Fast</option></select></label>
+          <label class="lbl">Speed <input type="range" id="speed" min="0.5" max="8" step="0.5" value="2" aria-label="Speed in frames per second"><output id="speedVal" for="speed">2 fps</output></label>
         </div>
         <div class="seg" role="group" aria-label="Measure">
           <button type="button" data-tool="line" title="Measure a distance: click points, double-click or Enter to finish"><svg viewBox="0 0 24 24"><path d="M5 19L19 5"/><circle cx="5" cy="19" r="1.8"/><circle cx="19" cy="5" r="1.8"/></svg>Line</button>
@@ -168,6 +241,11 @@
           <button type="button" data-mode="both" title="True colour and NIR false colour side by side">Both</button>
           <button type="button" data-mode="nir" title="NIR false colour only (near infrared, red, green)">NIR</button>
         </div>
+      </div>
+      <div id="loading">
+        <div id="chips" role="group" aria-label="Years"></div>
+        <div class="lstat"><span class="spin"></span><span id="loadHead">Starting…</span><span id="status"></span></div>
+        <div id="progress"><i></i></div>
       </div>
       <div class="info"><div id="caption"></div><div id="readout" class="note"></div></div>
     </div>
@@ -186,12 +264,20 @@
     </div>
   </div>
   <footer>
-    Contains modified Copernicus Sentinel data (Sentinel-2 L2A), read from the public AWS Open Data copy via Earth Search (Element 84).
-    Pictures are the true-colour product (TCI) as delivered, only cut to the polygon area; the NIR view puts the near-infrared band (B08, reflectance 0 to 0.5) in red and the TCI red and green in green and blue. Cloud masking uses the scene classification (SCL).
-    Measurements are great-circle distances and areas on the WGS84 sphere, as precise as the 10 m (or coarser) pixels shown.
-    Finished years are saved in this browser only (not shared) so the same population opens faster next time
-    <span id="cacheInfo"></span> <button class="linkbtn" id="forget">forget saved pictures</button>.
-    Prototype: <a href="https://github.com/braakhekke/GfS">repository and decisions</a>.
+    <dl>
+      <dt>Imagery</dt>
+      <dd>Contains modified Copernicus Sentinel data (Sentinel-2 L2A), read from the public <a href="https://registry.opendata.aws/sentinel-2-l2a-cogs/" target="_blank" rel="noopener">AWS Open Data copy</a> via <a href="https://earth-search.aws.element84.com/v1" target="_blank" rel="noopener">Earth Search</a> (Element 84).</dd>
+      <dt>Pictures</dt>
+      <dd>True colour is the TCI product as delivered, only cut to the polygon area. The NIR view puts the near-infrared band (B08, reflectance 0 to 0.5) in red and the TCI red and green in green and blue. Clouds are masked with the scene classification (SCL).</dd>
+      <dt>Background map</dt>
+      <dd>Shown only while loading: <a href="https://cloudless.eox.at" target="_blank" rel="noopener">EOxCloudless</a> 2024 by EOX IT Services GmbH (contains modified Copernicus Sentinel data 2024), <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>. Not part of the timelapse or the exports.</dd>
+      <dt>Measurements</dt>
+      <dd>Great-circle distances and areas on the WGS84 sphere, as precise as the 10 m (or coarser) pixels shown.</dd>
+      <dt>Saved pictures</dt>
+      <dd>Finished years are saved in this browser only (not shared), so the same population opens faster next time <span id="cacheInfo"></span> <button class="linkbtn" id="forget">forget saved pictures</button>.</dd>
+      <dt>About</dt>
+      <dd>Prototype for the <a href="https://www.genesfromspace.com/" target="_blank" rel="noopener">Genes from Space</a> tool: <a href="https://github.com/braakhekke/GfS" target="_blank" rel="noopener">repository and decisions</a>.</dd>
+    </dl>
   </footer>
 </main>
 <script>
@@ -556,7 +642,7 @@ function rebuildFrames(focusYear) {
   state.frames = state.years.filter(y => state.byYear[y] && state.byYear[y].rgb && !state.hidden.has(y)).map(y => effective(state.byYear[y]));
   const i = state.frames.findIndex(f => f.year === keepYear);
   state.idx = i >= 0 ? i : 0;
-  $('stage').hidden = !state.frames.length; $('slider').max = Math.max(0, state.frames.length - 1);
+  $('stage').hidden = !state.frames.length && !state.running; $('slider').max = Math.max(0, state.frames.length - 1);
   setExporting(state.running);
   renderTable(); draw();
 }
@@ -628,17 +714,58 @@ function pill(ctx, text, x, y, opts = {}) {
 function renderView(b) {
   const g = state.grid, cv = vpCanvas(b), ctx = cv.getContext('2d'), dpr = cv.width / view.w;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.fillStyle = '#0e1417'; ctx.fillRect(0, 0, view.w, view.h);
-  const f = state.frames[state.idx], off = view.off[b]; if (!f || !off) return;
-  const s = vscale();
-  ctx.imageSmoothingEnabled = s < 2;   // zoomed in: show the real pixels, not a blur
-  ctx.drawImage(off, view.w / 2 - view.cx * s, view.h / 2 - view.cy * s, g.W * s, g.H * s);
+  const f = state.frames[state.idx], s = vscale(), bm = mapReady() ? view.bg.c : null;
+  const pic = f ? view.off[b] : bm;   // no year to show yet: the background map of the place (D-17)
+  showWait(b, !f && !!bm);
+  if (!pic) return;
+  ctx.imageSmoothingEnabled = !f || s < 2;   // zoomed in: show the real pixels, not a blur
+  ctx.drawImage(pic, view.w / 2 - view.cx * s, view.h / 2 - view.cy * s, g.W * s, g.H * s);
   if ($('outline').checked) {
     ctx.lineJoin = 'round';
     for (const [lw, col] of [[3.5, 'rgba(0,0,0,.35)'], [1.6, '#ffffff']]) { ctx.strokeStyle = col; ctx.lineWidth = lw;
       for (const poly of state.rings) for (const ring of poly) { ctx.beginPath(); ring.forEach(([x, y], i) => { const [px, py] = toScreen(lonLatToImage(x, y)); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }); ctx.stroke(); } }
   }
+  if (!f) return;
   pill(ctx, String(f.year), 8, 8, { font: '700 14px system-ui, sans-serif', h: 24, bg: 'rgba(0,0,0,.6)' });
   drawMeasures(ctx);
+}
+/* ---- while loading: a background map and a message in the viewers (D-17) ----
+   EOxCloudless 2024: a cloud-free Sentinel-2 mosaic, so it looks like the timelapse; free for non-commercial use with the credit below,
+   CORS open, no key. It is only shown on screen until the first year is ready, never in the timelapse or the exports. */
+const BASEMAP = { year: 2024, url: (z, y, x) => `https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/${z}/${y}/${x}.jpg` };
+const BASEMAP_CREDIT = 'Background while loading: <a href="https://cloudless.eox.at" target="_blank" rel="noopener">EOxCloudless</a> 2024 by EOX IT Services GmbH (contains modified Copernicus Sentinel data 2024), <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>';
+function loadBasemap(g) {
+  if (view.bg && view.bg.gid === g.id) return;
+  const tx = (lon, z) => (lon + 180) / 360 * 2 ** z, ty = (lat, z) => (1 - Math.asinh(Math.tan(lat * RAD)) / Math.PI) / 2 * 2 ** z;
+  const lonOf = (x, z) => x / 2 ** z * 360 - 180, latOf = (y, z) => Math.atan(Math.sinh(Math.PI * (1 - 2 * y / 2 ** z))) / RAD;
+  let z = Math.max(2, Math.min(14, Math.ceil(Math.log2(1024 * 360 / 256 / (g.e - g.w)))));   // about 1000 map pixels across; the mosaic has 10 m pixels (zoom 14)
+  const range = z => [Math.floor(tx(g.w, z)), Math.floor(tx(g.e, z)), Math.floor(ty(g.n, z)), Math.floor(ty(g.s, z))];
+  while (z > 2) { const [x0, x1, y0, y1] = range(z); if ((x1 - x0 + 1) * (y1 - y0 + 1) <= 30) break; z--; }
+  const [x0, x1, y0, y1] = range(z), n = 2 ** z;
+  const c = document.createElement('canvas'), k = Math.min(4, 1024 / Math.max(g.W, g.H)); c.width = Math.round(g.W * k); c.height = Math.round(g.H * k);
+  const bg = view.bg = { gid: g.id, c, n: 0 }, cx = c.getContext('2d');
+  for (let y = Math.max(0, y0); y <= Math.min(n - 1, y1); y++) for (let x = x0; x <= x1; x++) {
+    const im = new Image(); im.crossOrigin = 'anonymous';
+    im.onload = () => {
+      if (view.bg !== bg) return;
+      /* place the tile by its corners; inside one tile Web Mercator is close enough to the page's lon/lat grid */
+      const px = lon => (lon - g.w) / (g.e - g.w) * c.width, py = lat => (g.n - lat) / (g.n - g.s) * c.height;
+      const l = px(lonOf(x, z)), r = px(lonOf(x + 1, z)), t = py(latOf(y, z)), b = py(latOf(y + 1, z));
+      cx.drawImage(im, l, t, r - l, b - t); bg.n++;
+      if (!state.frames[state.idx]) renderViews();
+    };
+    im.src = BASEMAP.url(z, y, ((x % n) + n) % n);
+  }
+}
+const mapReady = () => !!(state.grid && view.bg && view.bg.gid === state.grid.id && view.bg.n);
+function refreshWait() { if (state.grid && view.w) for (const b of shownBands()) showWait(b, !state.frames[state.idx] && mapReady()); }
+new MutationObserver(refreshWait).observe($('loadHead'), { childList: true, characterData: true, subtree: true });   // the steps before the year list ("Checking which years…")
+function showWait(b, map) {
+  const vp = $('vp-' + b), w = vp.querySelector('.wait'), cr = vp.querySelector('.credit'), f = state.frames[state.idx];
+  w.hidden = !state.running; w.classList.toggle('small', !!f);
+  const n = state.years.length, ready = state.years.filter(y => ['done', 'cached', 'none', 'error'].includes((state.stat[y] || {}).s)).length;
+  w.querySelector('b').textContent = f ? `Loading: ${ready} of ${n} years` : n ? `Loading the pictures: ${ready} of ${n} years ready` : $('loadHead').textContent;
+  cr.hidden = !map; if (map && !cr.innerHTML) cr.innerHTML = BASEMAP_CREDIT;
 }
 /* ---- measuring: great-circle lengths and spherical areas of points on the picture grid ---- */
 const R_EARTH = 6371008.8, RAD = Math.PI / 180;
@@ -763,6 +890,27 @@ function miniBtn(icon, label, title, danger, onclick) {
   const b = document.createElement('button'); b.type = 'button'; b.className = 'mini' + (danger ? ' danger' : ''); b.title = title;
   b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg>${label}`; b.onclick = onclick; return b;
 }
+/* the scenes of one year as a fold-out list: date, tile, and the scene id linked to its catalogue entry (D-19).
+   The table is redrawn whenever a year finishes, so which lists are open is remembered in openScenes. */
+const openScenes = new Set();
+const STAC_ITEM = id => `https://radiantearth.github.io/stac-browser/#/external/earth-search.aws.element84.com/v1/collections/sentinel-2-l2a/items/${encodeURIComponent(id)}`;
+function sceneList(year, ids) {
+  const d = document.createElement('details'); d.className = 'scenes'; d.open = openScenes.has(year);
+  const sm = document.createElement('summary'); sm.textContent = ids.length === 1 ? '1 scene' : `${ids.length} scenes`; d.appendChild(sm);
+  const ul = document.createElement('ul');
+  const parsed = ids.map(id => { const m = /^S2[ABC]_(\w{5})_(\d{4})(\d{2})(\d{2})_/.exec(id); return { id, tile: m ? m[1] : '', date: m ? `${m[2]}-${m[3]}-${m[4]}` : '' }; })
+    .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+  for (const p of parsed) {
+    const li = document.createElement('li'), a = document.createElement('a');
+    li.innerHTML = `<span class="d">${p.date}</span>`;
+    a.href = STAC_ITEM(p.id); a.target = '_blank'; a.rel = 'noopener'; a.textContent = p.id; a.title = `Tile ${p.tile}: open the catalogue entry (STAC Browser)`;
+    li.appendChild(a); ul.appendChild(li);
+  }
+  d.appendChild(ul);
+  sm.addEventListener('click', () => d.open ? openScenes.delete(year) : openScenes.add(year));   // at once, in case the table is redrawn before 'toggle' fires
+  d.addEventListener('toggle', () => d.open ? openScenes.add(year) : openScenes.delete(year));
+  return d;
+}
 function renderTable() {
   const tb = $('tbl').tBodies[0]; tb.innerHTML = '';
   const raws = state.years.filter(y => state.byYear[y]).map(y => state.byYear[y]);
@@ -773,8 +921,8 @@ function renderTable() {
     const src = f.kind === 'scene' ? 'single scene' : f.kind === 'composite' ? (single ? `best single scene (a composite of ${f.n} days exists)` : `composite of ${f.n} days`) : 'none';
     const dates = single ? [f.single.date] : f.dates, ids = single ? f.single.ids : f.ids;
     const cloud = f.bad == null ? '' : single ? pct(f.single.bad) + ' cloud' : f.kind === 'composite' ? pct(f.bad) + ' no clear pixel' : pct(f.bad);
-    const cells = [f.year, src + (f.fromCache ? ' (saved)' : ''), dates ? (dates.length > 3 ? dates[0] + ' … ' + dates[dates.length - 1] : dates.join(', ')) : '', cloud, ids ? ids.slice(0, 3).join(', ') + (ids.length > 3 ? ' …' : '') : f.note || ''];
-    cells.forEach(t => { const td = document.createElement('td'); td.textContent = t; tr.appendChild(td); });
+    const cells = [f.year, src + (f.fromCache ? ' (saved)' : ''), dates ? (dates.length > 3 ? dates[0] + ' … ' + dates[dates.length - 1] : dates.join(', ')) : '', cloud, ids ? sceneList(f.year, ids) : f.note || ''];
+    cells.forEach(t => { const td = document.createElement('td'); if (t instanceof Node) td.appendChild(t); else td.textContent = t; tr.appendChild(td); });
     const td = document.createElement('td'); td.className = 'acts';
     if (f.rgb) {
       td.appendChild(miniBtn(hid ? ICON.show : ICON.trash, hid ? 'Show' : 'Delete', hid ? 'Put this year back into the timelapse and exports' : 'Take this year out of the timelapse and exports (can be put back)', !hid,
@@ -795,8 +943,9 @@ function renderChips() {
   for (const y of state.years) {
     const st = state.stat[y] || { s: 'pending' }, d = document.createElement('div');
     d.className = 'chip ' + st.s + (cur && cur.year === y ? ' on' : '') + (state.hidden.has(y) ? ' hid' : '');
-    d.innerHTML = `${y}<small>${st.msg && ['search', 'score', 'composite'].includes(st.s) ? st.msg : STAT_TEXT[st.s]}</small>`;
-    d.title = st.tip || st.msg || '';
+    const busy = ['search', 'score', 'composite'].includes(st.s);   // the year shows a short text only while it is being built; otherwise the dot colour and the tooltip say it
+    d.innerHTML = `<i class="dot"></i>${y}` + (busy ? `<small>${st.msg || STAT_TEXT[st.s]}</small>` : '');
+    d.title = `${y}: ${STAT_TEXT[st.s]}` + (st.tip || st.msg ? ` (${st.tip || st.msg})` : '') + (['done', 'cached'].includes(st.s) ? '. Click to show.' : '');
     if (['done', 'cached'].includes(st.s)) d.onclick = () => { play(false); const i = state.frames.findIndex(f => f.year === y); if (i >= 0) { state.idx = i; draw(); } };
     if (state.hidden.has(y)) d.title = 'Deleted from the timelapse; use Show in the table below';
     box.appendChild(d);
@@ -804,18 +953,21 @@ function renderChips() {
   const n = state.years.length, ready = state.years.filter(y => ['done', 'cached', 'none', 'error'].includes((state.stat[y] || {}).s)).length;
   const fromSaved = state.years.filter(y => (state.stat[y] || {}).s === 'cached').length;
   $('progress').firstElementChild.style.width = (n ? ready / n * 100 : 0) + '%';
+  refreshWait();
   if (!state.running) return;
   const busy = state.years.filter(y => ['search', 'score', 'composite'].includes((state.stat[y] || {}).s)).length;
   $('loadHead').textContent = `Loading: ${ready} of ${n} years finished` + (busy ? `, ${busy} in progress` : '') + (fromSaved ? `, ${fromSaved} from saved pictures` : '');
 }
+/* Speed slider is in frames per second (0.5 to 8); timers and exports want milliseconds per frame. */
+function frameMs() { return Math.round(1000 / (+$('speed').value || 2)); }
 function play(on) {
   clearInterval(state.timer); state.timer = null;
   $('play').textContent = on ? 'Pause' : 'Play';
-  if (on && state.frames.length > 1) state.timer = setInterval(() => { state.idx = (state.idx + 1) % state.frames.length; draw(); }, +$('speed').value);
+  if (on && state.frames.length > 1) state.timer = setInterval(() => { state.idx = (state.idx + 1) % state.frames.length; draw(); }, frameMs());
 }
 
 /* ---------- export: video, GIF, PNG ---------- */
-/* An export frame is the on-screen frame plus a credit band; years without a picture are left out. Speed follows the Speed menu. */
+/* An export frame is the on-screen frame plus a credit band; years without a picture are left out. Frame time follows the Speed slider (frames per second). */
 const even = n => n + (n % 2);
 function exportFrames() { return state.frames.filter(f => f.rgb); }
 /* ---- resolution ----
@@ -835,10 +987,22 @@ function updateExInfo() {
   if (!state.rings) return;
   const one = k => { const z = exportSize(k); return z.same ? { W: state.grid.W, H: state.grid.H, pixelM: state.grid.pixelM } : z; };
   const k = shownBands().length;
-  const fmt = (name, z) => `${name} ${z.W * k + (k > 1 ? gapPx(z.W) : 0)} × ${z.H} px (${z.pixelM < 10.5 ? '10' : z.pixelM.toFixed(0)} m per pixel)`;
-  const p = one('png'), v = one('video'), g = one('gif');
-  $('exInfo').textContent = (k > 1 ? 'True colour and NIR side by side. ' : view.mode === 'nir' ? 'NIR false colour. ' : 'True colour. ') + ($('exQuality').value === 'standard' ? 'As shown: ' : 'Export size: ') + [fmt('PNG', p), fmt('video', v), fmt('GIF', g)].join(', ')
-    + ($('exQuality').value === 'high' && p.pixelM > 10.5 ? '. This polygon is too wide for 10 m pixels inside the size limits; the finest pixel that fits is used.' : '.');
+  const view_ = k > 1 ? 'True colour and NIR side by side' : view.mode === 'nir' ? 'NIR false colour' : 'True colour';
+  const std = $('exQuality').value === 'standard';
+  const rows = [['PNG', one('png')], ['Video', one('video')], ['GIF', one('gif')]];
+  const m = z => z.pixelM < 10.5 ? 10 : Math.round(z.pixelM);
+  const box = $('exInfo'); box.textContent = '';
+  const head = document.createElement('div'); head.className = 'exhead';
+  head.innerHTML = `<b>${std ? 'Export size, as shown' : 'Export size'}</b> · `; head.append(view_);
+  const tbl = document.createElement('div'); tbl.className = 'exsize';
+  for (const [name, z] of rows) tbl.insertAdjacentHTML('beforeend', `<span>${name}</span><span>${z.W * k + (k > 1 ? gapPx(z.W) : 0)} × ${z.H} px</span><span>${m(z)} m per pixel</span>`);
+  box.append(head, tbl);
+  const coarse = std ? [] : rows.filter(([, z]) => m(z) > 10).map(([n]) => n);
+  if (coarse.length) {   // which formats miss 10 m, and why
+    const n = document.createElement('div'); n.className = 'exnote';
+    n.textContent = `${coarse.length === 3 ? 'PNG, video and GIF' : coarse.join(' and ')}: this area is too wide for 10 m pixels within the size limit${coarse.length > 1 ? 's' : ''} (long side: PNG ${EXPORT_CAP.png}, video ${EXPORT_CAP.video}, GIF ${EXPORT_CAP.gif} px${k > 1 ? '; video and GIF are halved per panel' : ''}), so the finest pixel that fits is used.`;
+    box.append(n);
+  }
 }
 const hiStore = new Map(), itemStore = new Map();
 async function itemsById(ids) {
@@ -913,7 +1077,7 @@ function setExporting(on, note, frac) {
 }
 
 async function exportGif() {
-  const delay = +$('speed').value;
+  const delay = frameMs();
   setExporting(true, 'Preparing…', 0);
   const set = await exportSet('gif', exportFrames(), (n, fr) => setExporting(true, n, fr * 0.5));
   setExporting(true, 'Loading the GIF encoder…', 0.5);
@@ -931,7 +1095,7 @@ async function exportGif() {
   setExporting(false, `GIF saved (${set.grid.W} × ${set.grid.H} px).`);
 }
 async function exportVideo() {
-  const delay = +$('speed').value;
+  const delay = frameMs();
   if (typeof MediaRecorder === 'undefined') { setExporting(false, 'This browser cannot record video; use the GIF.'); return; }
   const type = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find(t => MediaRecorder.isTypeSupported(t));
   if (!type) { setExporting(false, 'This browser cannot record video; use the GIF.'); return; }
@@ -991,7 +1155,7 @@ async function runInner(cfg) {
   const pkey = state.pkey = polyKey(cfg.rings); loadView();
   const gk = `${pkey}|${g.W}x${g.H}`;
   if (view.gridKey !== gk) { view.gridKey = gk; view.meas = []; view.draft = null; resetView(); }
-  layoutViews();
+  $('stage').hidden = false; loadBasemap(g); layoutViews();
   $('loadHead').textContent = 'Checking which years Earth Search has for this place…';
   const earliest = await earliestScene(g, pkey); if (!alive()) return;
   if (!earliest) { state.running = false; $('loading').classList.add('done'); $('loadHead').textContent = 'Earth Search has no Sentinel-2 L2A scene over this polygon.'; return; }
@@ -1002,11 +1166,11 @@ async function runInner(cfg) {
     if (tropic) {
       $('loadHead').textContent = 'Finding the clearest months…';
       const q = await clearestQuarter(g, cfg.rings, earliestY, new Date().getUTCFullYear() - 1, t => { if (alive()) $('status').textContent = t; }); if (!alive()) return;   // always every full year, so the months do not depend on the years shown
-      from = q.from; to = q.to; cfg.note = `Season: tropics (latitude ${g.lat0.toFixed(1)}) have no summer, so the three months with the lowest mean cloud cover in the catalogue are used: ${MONTHS[from - 1]} to ${MONTHS[to - 1]} (mean tile cloud ${q.meanCloud.toFixed(0)} %), the same months every year.`;
-    } else if (g.lat0 > 0) { from = 6; to = 9; cfg.note = 'Season: northern summer, June to September.'; }
-    else { from = 12; to = 3; cfg.note = 'Season: southern summer, December to March (a season is named after the year it ends in).'; }
+      from = q.from; to = q.to; cfg.note = `Tropics (latitude ${g.lat0.toFixed(1)}) have no summer, so the three months with the lowest mean cloud cover in the catalogue are used: ${MONTHS[from - 1]} to ${MONTHS[to - 1]} (mean tile cloud ${q.meanCloud.toFixed(0)} %), the same months every year.`;
+    } else if (g.lat0 > 0) { from = 6; to = 9; cfg.note = 'Northern summer, June to September.'; }
+    else { from = 12; to = 3; cfg.note = 'Southern summer, December to March (a season is named after the year it ends in).'; }
     $('mFrom').value = from; $('mTo').value = to; cfg.auto = false;
-  } else cfg.note = 'Season: set by hand.';
+  } else cfg.note = 'Set by hand.';
   $('seasonNote').textContent = cfg.note;
   /* years: the selection on the page; the last year offered is the latest whose season has ended */
   const lastY = lastFullYear(from, to);
@@ -1047,11 +1211,27 @@ function fillYearSelects(firstY, lastY, earliest, cfg) {
   for (let y = firstY; y <= lastY; y++) { a.add(new Option(y, y)); b.add(new Option(y, y)); }
   a.value = String(Math.min(Math.max(+(keepA || cfg.y0 || firstY), firstY), lastY));
   b.value = String(Math.min(Math.max(+(keepB || cfg.y1 || lastY), firstY), lastY));
-  $('yearNote').textContent = `Years: ${firstY} is the first year offered, because the earliest Sentinel-2 L2A scene Earth Search has over this polygon is from ${earliest} (it differs by region); ${lastY} is the latest year whose season has ended. Change them above.`;
+  $('yearNote').textContent = `${firstY} is the first year offered, because the earliest Sentinel-2 L2A scene Earth Search has over this polygon is from ${earliest} (it differs by region); ${lastY} is the latest year whose season has ended. Change them above.`;
 }
 async function showCacheInfo() { const n = await store.count(); $('cacheInfo').textContent = n ? `(${n} saved)` : ''; }
 
+/* two buttons top left (D-18): "Pick a population" goes back to the page that lists the populations, "GfS tool" always opens gfstool.com.
+   Pick a population: `back=` in the link wins, then the referrer, then this repo's population page (mockup/results.html).
+   Only http(s) addresses are accepted. If this page was opened in a new tab and has no history of its own, the tab is closed instead,
+   so the user lands on the population page they came from as they left it; when the browser refuses to close it, the link is followed. */
+function setupBack() {
+  const a = $('back'), ok = u => { try { const x = new URL(u, location.href); return /^https?:$/.test(x.protocol) && x.href.split('#')[0] !== location.href.split('#')[0] ? x.href : null; } catch { return null; } };
+  const target = ok(new URLSearchParams(location.hash.slice(1)).get('back') || '') || ok(document.referrer);
+  if (!target) return;   // opened directly: the button keeps its default, this repo's population page
+  a.href = target;
+  a.addEventListener('click', e => {
+    if (e.button || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || history.length > 1) return;   // modified clicks and normal tabs: plain link
+    e.preventDefault(); window.close();
+    setTimeout(() => { location.href = target; }, 150);   // still open: the browser did not allow closing
+  });
+}
 function init() {
+  setupBack();
   const cfg = parseHash();
   $('exampleLink').href = '#bbox=118.05,5.75,118.25,5.95&name=Example%20population';
   $('exampleLink').addEventListener('click', () => setTimeout(() => location.reload(), 0));
@@ -1060,7 +1240,7 @@ function init() {
   for (const sel of [$('mFrom'), $('mTo')]) MONTHS.forEach((m, i) => sel.add(new Option(m, i + 1)));
   $('play').onclick = () => play(!state.timer);
   $('slider').oninput = e => { play(false); state.idx = +e.target.value; draw(); };
-  $('speed').onchange = () => { if (state.timer) play(true); };
+  $('speed').oninput = () => { $('speedVal').textContent = $('speed').value + ' fps'; if (state.timer) play(true); };
   $('outline').onchange = draw;
   $('preferSingle').onchange = e => { state.preferSingle = e.target.checked; state.single = {}; viewChanged(); };
   $('exQuality').onchange = updateExInfo;

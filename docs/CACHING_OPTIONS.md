@@ -38,7 +38,7 @@ Dead ends, with reasons: server-side rendering on a free function (CPU limits ar
 
 ## 5. Other things free polygons need (not specific to caching)
 
-- **Drawing:** a Leaflet draw tool (polygon and rectangle) on the Results map or on the timelapse page itself; the mockup does not have it yet.
-- **Limits:** a maximum area (a 100 x 100 km polygon at 10 m is 100 million pixels; the page already falls back to coarser pixels, but reading gets heavy), a vertex limit (simplify to a few hundred), and a clear message when a polygon is mostly sea (Earth Search has no scenes over open ocean, tested).
+- **Drawing:** built in the mockup on 2026-11-06 (Leaflet-Geoman, polygon and rectangle, one area at a time, D-21).
+- **Limits:** the mockup allows at most 60 × 60 km for a drawn area (D-21); the earlier note: a maximum area (a 100 x 100 km polygon at 10 m is 100 million pixels; the page already falls back to coarser pixels, but reading gets heavy), a vertex limit (simplify to a few hundred), and a clear message when a polygon is mostly sea (Earth Search has no scenes over open ocean, tested).
 - **Hand-over:** a long polygon makes a long link; for drawn polygons pass them through `sessionStorage` or `postMessage` between the Results page and the timelapse window (same site only) or keep the link for short ones.
 - **Politeness to the public services:** many users reading the same public bucket is what it is for, but the Earth Search catalogue is a shared service; keep requests few (the page makes about 7 per run) and retry with backoff (done).

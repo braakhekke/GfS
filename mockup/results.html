@@ -11,8 +11,10 @@
   Purpose: a stand-in for the Results page on which the "look at this population" wire is built and tested.
   The wire: select a population (drop-down or popup button), the link opens ../index.html in a new window
   with the polygon in the hash (format: docs/URL_CONTRACT.md).
+  Free drawing (D-21): one own polygon or rectangle (Leaflet-Geoman free 2.20.1, MIT), at most 60 x 60 km, opened the same way as a population.
 -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@geoman-io/leaflet-geoman-free@2.20.1/dist/leaflet-geoman.css">
 <style>
   :root { --ink:#262730; --muted:#6b6f7b; --line:#dfe1e6; --side:#f0f2f6; --accent:#ff4b4b; }
   * { box-sizing:border-box; }
@@ -34,6 +36,10 @@
   tr.pick td { background:#fff0f0; }
   button.btn { cursor:pointer; }
   .leaflet-popup-content a.btn { margin-top:6px; }
+  .hint { color:var(--muted); font-size:13px; margin:6px 0 0; }
+  .size { pointer-events:none; max-width:min(340px, calc(100vw - 60px)); background:#fff; padding:4px 8px; border-radius:4px; box-shadow:0 1px 4px rgba(0,0,0,.3); font-size:12px; line-height:1.4; }
+  .size:empty { display:none; }
+  .size.over, .hint .over { color:#b00020; font-weight:600; }
   @media (max-width:760px) { nav { display:none; } }
 </style>
 </head>
@@ -46,6 +52,7 @@
   <h1>Results</h1>
   <p><b>The land cover classes used are:</b> Treecover</p>
   <div id="map"></div>
+  <p class="hint" id="drawInfo"></p>
 
   <div class="sel">
     <div><label for="pick">Look at one population closely</label>
@@ -58,6 +65,7 @@
   <table id="tbl"><thead><tr><th>Name</th><th>Population_Density</th><th>nenc</th><th>pop_size</th><th>effective_size</th><th>habitat_area</th></tr></thead><tbody></tbody></table>
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@geoman-io/leaflet-geoman-free@2.20.1/dist/leaflet-geoman.min.js"></script>
 <script>
 'use strict';
 /* Mock populations: same fields as the real popup (name, Population_Density, nenc, pop_size, effective_size).
@@ -75,24 +83,121 @@ const POPS = [
 
 /* THE WIRE: one function turns a population feature into the link of the timelapse page (docs/URL_CONTRACT.md) */
 const TIMELAPSE_PAGE = '../index.html';   // same site; in Streamlit this becomes the full address of the hosted page
-const timelapseUrl = (feature, name) => TIMELAPSE_PAGE + '#geojson=' + encodeURIComponent(JSON.stringify(feature.geometry)) + '&name=' + encodeURIComponent(name);
+const timelapseUrl = (feature, name) => TIMELAPSE_PAGE + '#geojson=' + encodeURIComponent(JSON.stringify(feature.geometry)) + '&name=' + encodeURIComponent(name) + '&back=' + encodeURIComponent(location.href.split('#')[0]);   // back: where the timelapse's Back button leads (D-18)
 
 const map = L.map('map').setView([20, 40], 2);   // placeholder view; showAll() frames the populations below
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors', maxZoom: 18 }).addTo(map);
 const layers = {}, markers = {};
 const sel = document.getElementById('pick'), openBtn = document.getElementById('open'), tb = document.querySelector('#tbl tbody');
+/* ---- size of a shape: the same extent formula as setupGrid() in index.html (without its 8 % margin), area as geoArea() there ---- */
+const RAD = Math.PI / 180, R_EARTH = 6371008.8;
+function sizeOf(latlngs) {   // latlngs: flat array of L.LatLng
+  let w = 180, e = -180, s = 90, n = -90;
+  for (const p of latlngs) { w = Math.min(w, p.lng); e = Math.max(e, p.lng); s = Math.min(s, p.lat); n = Math.max(n, p.lat); }
+  const ew = (e - w) * Math.cos((s + n) / 2 * RAD) * 111.32, ns = (n - s) * 110.574;
+  let a = 0;
+  for (let i = 0; i < latlngs.length; i++) { const p = latlngs[i], q = latlngs[(i + 1) % latlngs.length]; a += (q.lng - p.lng) * RAD * (2 + Math.sin(p.lat * RAD) + Math.sin(q.lat * RAD)); }
+  return { ew, ns, side: Math.max(ew, ns), km2: latlngs.length > 2 ? Math.abs(a * R_EARTH * R_EARTH / 2) / 1e6 : 0 };
+}
+const ringOf = layer => layer.getLatLngs().flat(3);
+const fmtSize = z => `${z.ew.toFixed(1)} × ${z.ns.toFixed(1)} km (east-west × north-south), ${z.km2 < 10 ? z.km2.toFixed(1) : z.km2.toFixed(0)} km²`;
+
+/* ---- free drawing (D-21): one drawn area at a time, at most 60 × 60 km (east-west and north-south extent each at most 60 km) ----
+   Why the longest side and not the area: index.html builds its grid on the bounding box, so a long thin polygon costs as much as its box.
+   60 km is about 1.25 times the largest population here; above it the screen picture gets coarser than about 90 m per pixel (800 px cap)
+   and the area starts spanning several Sentinel-2 tiles (110 km wide) per day, so reads multiply. */
+const DRAW_MAX_KM = 60;
+const DRAWN = '__drawn';   // key of the drawn area in the drop-down
+let drawn = null;          // { layer, size }
+const tooBig = z => z.side > DRAW_MAX_KM;
+const LIMIT_TXT = `${DRAW_MAX_KM} × ${DRAW_MAX_KM} km`;
+/* the warning: which side is over the limit and by how much */
+const overMsg = z => `Too large: the maximum is ${LIMIT_TXT}. ` + [['east-west', z.ew], ['north-south', z.ns]].filter(([, v]) => v > DRAW_MAX_KM).map(([k, v], i) => `${i ? k : k[0].toUpperCase() + k.slice(1)} is ${v.toFixed(1)} km, ${(v - DRAW_MAX_KM).toFixed(1)} km over`).join('; ') + '.';
+const popSides = POPS.filter(p => !p.test).map(p => sizeOf(p.feature.geometry.coordinates[0].slice(0, -1).map(([x, y]) => L.latLng(y, x))).side);
+
+let current = '';
 function choose(name) {
-  sel.value = name || '';
-  const p = POPS.find(x => x.name === name);
-  openBtn.setAttribute('aria-disabled', p ? 'false' : 'true');
-  if (p) openBtn.href = timelapseUrl(p.feature, p.name); else openBtn.removeAttribute('href');
+  current = name || ''; sel.value = current;
+  const p = name === DRAWN ? drawn && { feature: drawn.layer.toGeoJSON(), name: 'Drawn area', blocked: tooBig(drawn.size) } : POPS.find(x => x.name === name);
+  const ok = p && !p.blocked;
+  openBtn.setAttribute('aria-disabled', ok ? 'false' : 'true');
+  if (ok) openBtn.href = timelapseUrl(p.feature, p.name); else openBtn.removeAttribute('href');
+  openBtn.title = p && p.blocked ? overMsg(drawn.size) + ' Make it smaller to open the timelapse.' : '';
   for (const n in layers) layers[n].setStyle({ weight: n === name ? 4 : 2, fillOpacity: n === name ? 0.45 : 0.25 });
+  if (drawn) drawn.layer.setStyle({ weight: name === DRAWN ? 4 : 2 });
   document.querySelectorAll('#tbl tr').forEach(tr => tr.classList.toggle('pick', tr.dataset.name === name));
 }
+
+/* readout in the lower left of the map while drawing or editing */
+const SizeBox = L.Control.extend({ options: { position: 'bottomleft' }, onAdd() { return L.DomUtil.create('div', 'size'); } });   // pointer-events:none: the readout never takes a click meant for drawing
+const sizeBox = new SizeBox().addTo(map).getContainer();
+function showSize(z) {
+  sizeBox.textContent = z ? fmtSize(z) + (tooBig(z) ? '. ' + overMsg(z) : '') : '';
+  sizeBox.classList.toggle('over', !!z && tooBig(z));
+}
+const info = document.getElementById('drawInfo');
+function updateInfo() {
+  const base = `Or draw your own area with the polygon or rectangle tool on the left of the map (one at a time; drawing again replaces it). `
+    + `Allowed: at most ${LIMIT_TXT} (east-west × north-south). For comparison, the populations here are ${Math.min(...popSides).toFixed(0)} to ${Math.max(...popSides).toFixed(0)} km on their longest side.`;
+  if (!drawn) { info.textContent = base; return; }
+  const z = drawn.size;
+  info.innerHTML = '';
+  info.append(base + ' Your area: ' + fmtSize(z) + '. ');
+  if (tooBig(z)) { const b = document.createElement('span'); b.className = 'over'; b.textContent = overMsg(z) + ' Drag its corners inward (edit tool) or draw a smaller one.'; info.append(b); }
+}
+function drawnPopup() {
+  const box = document.createElement('div'), z = drawn.size;
+  box.innerHTML = `<b>Drawn area</b><br>${fmtSize(z)}<br>`;
+  if (tooBig(z)) box.insertAdjacentHTML('beforeend', `<span class="over" style="color:#b00020">${overMsg(z)}</span>`);
+  else { const a = document.createElement('a'); a.className = 'btn'; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Open timelapse'; a.href = timelapseUrl(drawn.layer.toGeoJSON(), 'Drawn area'); box.appendChild(a); }
+  return box;
+}
+function drawnChanged() {
+  drawn.size = sizeOf(ringOf(drawn.layer));
+  drawn.layer.setStyle({ color: tooBig(drawn.size) ? '#b00020' : '#e07b00' });
+  drawn.layer.setPopupContent(drawnPopup());
+  showSize(null); updateInfo(); choose(DRAWN);
+}
+function removeDrawn() {
+  if (!drawn) return;
+  const l = drawn.layer; drawn = null;
+  if (map.hasLayer(l)) map.removeLayer(l);
+  const o = [...sel.options].find(o => o.value === DRAWN); if (o) o.remove();
+  choose(current === DRAWN ? '' : current);
+  showSize(null); updateInfo();
+}
+
+map.pm.setGlobalOptions({ allowSelfIntersection: false, pathOptions: { color: '#e07b00', weight: 2, fillOpacity: 0.2 } });
+map.pm.addControls({ position: 'topleft', drawMarker: false, drawCircleMarker: false, drawPolyline: false, drawCircle: false, drawText: false,
+  cutPolygon: false, rotateMode: false, drawPolygon: true, drawRectangle: true, editMode: true, dragMode: true, removalMode: true });
+/* live size while drawing: the shape so far plus the cursor */
+let working = null, corner = null;   // corner: the rectangle's first click
+map.on('pm:drawstart', e => { working = e.workingLayer; corner = null; });
+map.on('click', e => { if (working instanceof L.Rectangle && !corner) corner = e.latlng; });
+map.on('pm:drawend', () => { working = null; showSize(null); });
+/* a rectangle's working layer sits at 0,0 until the first click and is only on the map from then on */
+map.on('mousemove', e => {
+  if (!working) return;
+  if (working instanceof L.Rectangle) { if (!corner) return showSize(null); const bb = L.latLngBounds([corner, e.latlng]); showSize(sizeOf([bb.getSouthWest(), bb.getSouthEast(), bb.getNorthEast(), bb.getNorthWest()])); }   // first corner to the cursor
+  else { const pts = map.hasLayer(working) ? ringOf(working) : []; showSize(pts.length ? sizeOf([...pts, e.latlng]) : null); }
+});
+map.on('pm:create', e => {
+  removeDrawn();
+  drawn = { layer: e.layer };
+  e.layer.bindPopup('');
+  e.layer.on('pm:edit pm:dragend', drawnChanged);
+  e.layer.on('pm:markerdrag', () => showSize(sizeOf(ringOf(e.layer))));
+  e.layer.on('click', () => choose(DRAWN));
+  sel.add(new Option('Drawn area (yours)', DRAWN));
+  drawnChanged();
+});
+map.on('pm:remove', e => { if (drawn && e.layer === drawn.layer) removeDrawn(); });
+
 for (const p of POPS) {
-  const l = layers[p.name] = L.geoJSON(p.feature, { style: { color: '#6a2cf0', weight: 2, fillOpacity: 0.25 } }).addTo(map);
+  /* pmIgnore: the population polygons are results of the tool and must not be edited, dragged or removed by the draw tools */
+  const l = layers[p.name] = L.geoJSON(p.feature, { pmIgnore: true, style: { color: '#6a2cf0', weight: 2, fillOpacity: 0.25 } }).addTo(map);
   /* a polygon of 20 km is a speck on a world map: a marker at its centre keeps every population visible at any zoom; it is hidden once the polygons are large enough to see */
-  const mk = markers[p.name] = L.circleMarker([p.lat, p.lon], { radius: 7, color: '#fff', weight: 2, fillColor: '#6a2cf0', fillOpacity: 1 }).addTo(map).bindTooltip(p.name);
+  const mk = markers[p.name] = L.circleMarker([p.lat, p.lon], { pmIgnore: true, radius: 7, color: '#fff', weight: 2, fillColor: '#6a2cf0', fillOpacity: 1 }).addTo(map).bindTooltip(p.name);
   mk.on('click', () => { choose(p.name); map.fitBounds(l.getBounds(), { maxZoom: 10 }); });
   const a = document.createElement('a'); a.className = 'btn'; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Open timelapse'; a.href = timelapseUrl(p.feature, p.name);
   const box = document.createElement('div');
@@ -107,7 +212,8 @@ const showAll = () => map.fitBounds(L.featureGroup(Object.values(layers)).getBou
 showAll(); document.getElementById('all').onclick = showAll;
 const syncMarkers = () => { const small = map.getZoom() < 9; for (const n in markers) { if (small) markers[n].addTo(map); else map.removeLayer(markers[n]); } };
 map.on('zoomend', syncMarkers); syncMarkers();
-sel.onchange = () => { choose(sel.value); if (sel.value) map.fitBounds(layers[sel.value].getBounds(), { maxZoom: 10 }); };
+sel.onchange = () => { choose(sel.value); const l = sel.value === DRAWN ? drawn && drawn.layer : layers[sel.value]; if (l) map.fitBounds(l.getBounds(), { maxZoom: 10 }); };
+updateInfo();
 </script>
 </body>
 </html>

@@ -9,6 +9,7 @@ The page reads everything from the URL **hash** (after `#`), so nothing is sent 
 | `name` | label shown in the header (e.g. `pop_1`) |
 | `y0`, `y1` | first and last year (default 2017 and the last year whose season has ended) |
 | `from`, `to` | season months 1 to 12 (default: automatic, see DECISIONS D-04.1) |
+| `back` | URL-encoded address of the population overview (the Results page). The **Pick a population** button leads there. If missing: the referrer, else `mockup/results.html` in this repo. (The **GfS tool** button always leads to https://www.gfstool.com/.) Only `http(s)` addresses are used (D-18). |
 
 Example: `index.html#bbox=118.05,5.75,118.25,5.95&name=Example%20population`
 
